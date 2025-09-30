@@ -4,9 +4,13 @@ import openai
 import base64
 import io
 import logging
-from gtts import gTTS
-import os # Ortam değişkenlerini okumak için
+import os # Ortam değişkenleri ve subprocess için
+import subprocess # Edge-TTS için
+import tempfile
 import time 
+
+# Gerekli olmayan gTTS'i kaldırıyoruz (Hata oluşursa tamamen çökecek, ama Edge-TTS'i garanti ediyoruz)
+# from gtts import gTTS 
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
@@ -33,7 +37,7 @@ def ask():
     
     # API Anahtarını kontrol et
     if not OPENROUTER_API_KEY:
-        return jsonify({"error": "Sunucu API anahtarı eksik."}), 500
+        return jsonify({"error": "Sunucu API anahtarı eksik. Render ayarlarınızı kontrol edin."}), 500
 
     # ÖDEV ÖĞRETMENİ SİSTEM TALİMATI
     system_prompt = (
@@ -62,27 +66,50 @@ def ask():
         )
         answer = completion.choices[0].message.content
 
-        # 2. Ses Üretimi (gTTS - En Stabil Yedek)
+        # 2. Ses Üretimi (Edge TTS - HIZ AYARIYLA BİRLİKTE)
         audio_base64 = ""
+        
         try:
-            logging.info("gTTS ile ses üretiliyor (Stabil yedek)...")
-            tts = gTTS(text=answer, lang='tr', slow=False)
-            audio_buffer = io.BytesIO()
-            tts.write_to_fp(audio_buffer)
-            audio_buffer.seek(0)
-            audio_base64 = base64.b64encode(audio_buffer.read()).decode('utf-8')
+            logging.info("Edge TTS ile ses üretiliyor (Hız: +18%)...")
             
-        except Exception as tts_error:
-            logging.error(f"gTTS ses üretimi hatası: {str(tts_error)}", exc_info=True)
-            # Ses üretilemezse boş bırakılır, metin yine de gönderilir
-            pass
+            VOICE = "tr-TR-EmelNeural" 
+            RATE = "+18%" 
+            
+            # Geçici dosya oluşturma
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_audio:
+                temp_filename = tmp_audio.name
+            
+            # Edge TTS komutunu çalıştır (subprocess)
+            command = [
+                'edge-tts',
+                '--text', answer,
+                '--voice', VOICE,
+                '--rate', RATE,
+                '--write-media', temp_filename
+            ]
+            
+            # Komutu çalıştır
+            subprocess.run(command, check=True, capture_output=True)
+            
+            # Ses verisini oku ve base64'e çevir
+            with open(temp_filename, 'rb') as f:
+                audio_data = f.read()
+            
+            # Geçici dosyayı sil
+            os.remove(temp_filename)
 
+            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+
+        except Exception as tts_error:
+            # EDGE-TTS'de HATA OLURSA BİLE BOT ÇÖKMESİN DİYE BOŞ GÖNDERİYORUZ
+            logging.error(f"Edge TTS HATA: Ses üretilemedi. Metin cevabı gönderiliyor. Hata: {str(tts_error)}", exc_info=True)
+            pass 
 
         return jsonify({"answer": answer, "audio_base64": audio_base64})
 
     except Exception as e:
         logging.error(f"Genel hata oluştu: {str(e)}", exc_info=True)
-        return jsonify({"error": "Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin."}), 500
+        return jsonify({"error": "Sunucuya ulaşılamıyor. Lütfen Render Kayıtlarını kontrol edin."}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)

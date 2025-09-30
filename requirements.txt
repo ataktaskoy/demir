@@ -1,6 +1,6 @@
 flask
 flask-cors
 openai
-gtts
+edge-tts
 gunicorn
 gevent
