@@ -6,11 +6,12 @@ const recordBtn = document.getElementById("recordBtn");
 
 // --- Ses Kontrolü ---
 let currentAudio = null;
-let isSpeaking = false; // Botun konuşup konuşmadığını takip eder
-let recognition = null; // Web Speech Recognition objesi
+let isSpeaking = false; 
+let recognition = null; 
 
 // --- API Ayarları ---
-const API_URL = "http://127.0.0.1:5000/ask";
+// HATA DÜZELTME: Render'da çalışmak için sadece göreceli yol kullanıyoruz
+const API_URL = "/ask"; 
 
 // --- Mesajları Ekrana Ekleme ---
 function appendMessage(text, sender) {
@@ -42,7 +43,7 @@ function playAudioFromBase64(base64Data) {
     
     currentAudio.play().catch(error => {
         console.error("Audio playback failed:", error);
-        isSpeaking = false; // Hata durumunda da kapat
+        isSpeaking = false; 
     });
 }
 
@@ -52,7 +53,6 @@ function stopRecognitionIfActive() {
         try {
             recognition.stop();
         } catch (e) {
-            // Hata olsa bile objeyi temizle
             console.warn("Recognition zaten durmuştu veya durdurulurken hata oluştu.");
         }
         recognition = null;
@@ -66,7 +66,6 @@ function stopRecognitionIfActive() {
 async function sendMessage(text) {
     if (!text) return;
     
-    // YAZILI GÖNDERME HATASINI DÜZELTEN KOD:
     stopRecognitionIfActive(); 
     
     appendMessage(text, "user");
@@ -74,7 +73,8 @@ async function sendMessage(text) {
     sendBtn.disabled = true;
 
     try {
-        const response = await fetch(API_URL, {
+        // API_URL artık /ask olarak ayarlandığı için Render adresine gidecektir.
+        const response = await fetch(API_URL, { 
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -84,6 +84,7 @@ async function sendMessage(text) {
 
         const data = await response.json();
         if (data.error) {
+            // Sunucudan gelen hata mesajını göster
             appendMessage("Hata: " + data.error, "bot");
         } else {
             appendMessage(data.answer, "bot");
@@ -92,7 +93,8 @@ async function sendMessage(text) {
             }
         }
     } catch (error) {
-        appendMessage("Sunucuya ulaşılamıyor. Lütfen server.py'nin çalıştığından emin olun.", "bot");
+        // Sunucuya hiç ulaşılamadığında bu hata çıkar
+        appendMessage("Sunucuya ulaşılamıyor. Lütfen Render'daki uygulamanın 'Live' olduğundan emin olun.", "bot");
         console.error("Fetch error:", error);
     } finally {
         sendBtn.disabled = false;
@@ -108,46 +110,39 @@ function startVoiceRecognition() {
         return;
     }
 
-    // Mikrofon zaten dinliyorsa durdur
     if (recognition) {
         stopRecognitionIfActive();
         return;
     }
 
     recognition = new SpeechRecognition();
-    recognition.lang = 'tr-TR'; // Türkçe dilini ayarla
-    recognition.interimResults = false; // Sadece son sonucu al
+    recognition.lang = 'tr-TR';
+    recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
-    // Dinleme başladığında buton stilini değiştir
     recognition.onstart = () => {
         recordBtn.innerText = "Dinliyor...";
         recordBtn.classList.add("listening");
         userInput.placeholder = "Şimdi konuşun...";
     };
 
-    // Ses tanındığında
     recognition.onresult = (event) => {
         const speechToText = event.results[0][0].transcript;
         userInput.value = speechToText;
-        // Metin kutusu dolduktan sonra otomatik gönder
         sendMessage(speechToText); 
     };
 
-    // Dinleme bittiğinde (hata olsa da olmasa da)
     recognition.onend = () => {
-        // Dinleme bittiğinde objeyi temizle, stili geri getir
         stopRecognitionIfActive();
     };
 
-    // Hata oluştuğunda
     recognition.onerror = (event) => {
         console.error('Ses Tanıma Hatası:', event.error);
         alert(`Ses Tanıma Hatası: ${event.error}`);
-        stopRecognitionIfActive(); // Hata durumunda da temizle
+        stopRecognitionIfActive();
     };
 
-    recognition.start(); // Dinlemeyi başlat
+    recognition.start();
 }
 
 // --- Olay Dinleyicileri ---
@@ -207,27 +202,21 @@ function onWindowResize() {
 function animate() {
     requestAnimationFrame(animate);
 
-    // Ses dalgası mantığı
     let baseScale = 2; 
     let audioEffect = 0;
 
-    // Bot konuşuyorsa (isSpeaking), boyutu değiştir
     if (isSpeaking) {
         frameCount += 0.2;
-        // Konuşma etkisi: Rastgele ve sinüs dalgası ile dalgalanma
         audioEffect = (Math.random() * 0.1) + Math.sin(frameCount) * 0.15;
     } else {
-        // Konuşma durduğunda yavaşça temel boyuta geri dön
         frameCount = 0;
         audioEffect = 0;
     }
 
     const scaleFactor = baseScale + audioEffect;
     
-    // Balonun büyüklüğünü ayarla
     sphere.scale.set(scaleFactor, scaleFactor, scaleFactor);
     
-    // Yavaş ve sürekli dönüş
     sphere.rotation.x += 0.003;
     sphere.rotation.y += 0.005;
 
