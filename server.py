@@ -9,9 +9,6 @@ import subprocess # Edge-TTS için
 import tempfile
 import time 
 
-# Gerekli olmayan gTTS'i kaldırıyoruz (Hata oluşursa tamamen çökecek, ama Edge-TTS'i garanti ediyoruz)
-# from gtts import gTTS 
-
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
 
@@ -88,7 +85,6 @@ def ask():
                 '--write-media', temp_filename
             ]
             
-            # Komutu çalıştır
             subprocess.run(command, check=True, capture_output=True)
             
             # Ses verisini oku ve base64'e çevir

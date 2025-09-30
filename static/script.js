@@ -10,8 +10,8 @@ let isSpeaking = false;
 let recognition = null; 
 
 // --- API Ayarları ---
-// HATA DÜZELTME: Render'da çalışmak için sadece göreceli yol kullanıyoruz
-const API_URL = "/ask";
+// KRİTİK DÜZELTME: Artık yerel adres yerine göreceli yol kullanılıyor
+const API_URL = "/ask"; 
 
 // --- Mesajları Ekrana Ekleme ---
 function appendMessage(text, sender) {
