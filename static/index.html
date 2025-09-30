@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demir'in AI Öğretmeni</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <canvas id="bgCanvas"></canvas>
+    <div id="bot-container">
+        <h2>Demir'in AI Öğretmeni</h2>
+        <p>Merhaba Demir, derslerinde sana nasıl yardımcı olabilirim?</p>
+        <div id="messages"></div>
+        <div class="input-container">
+            <input type="text" id="userInput" placeholder="Sorunu yaz...">
+            <button id="sendBtn">Gönder</button>
+            <button id="recordBtn">Mikrofon</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
