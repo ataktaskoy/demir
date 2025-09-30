@@ -5,21 +5,17 @@ import base64
 import io
 import logging
 from gtts import gTTS
-# Edge TTS için gerekli kütüphaneler
-import subprocess
-import tempfile
-import os 
-import time
+import os # Ortam değişkenlerini okumak için
+import time 
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
 
 # Logging ayarları
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# API Key'leriniz
-# NOT: Render üzerinde bu anahtar Environment Variables (Ortam Değişkenleri) ile tanımlanacaktır.
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
+# API Anahtarı: Ortam değişkenlerinden güvenli bir şekilde alınır
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 @app.route("/")
 def index():
@@ -33,8 +29,12 @@ def favicon():
 def ask():
     data = request.get_json()
     question = data.get("message", "")
-    logging.debug(f"Gelen soru: {question}")
+    logging.info(f"Gelen soru: {question}")
     
+    # API Anahtarını kontrol et
+    if not OPENROUTER_API_KEY:
+        return jsonify({"error": "Sunucu API anahtarı eksik."}), 500
+
     # ÖDEV ÖĞRETMENİ SİSTEM TALİMATI
     system_prompt = (
         "Sen, 12 yaşındaki Demir'in **özel, çok neşeli ve sohbet etmeyi seven** bir yapay zeka öğretmenisin. "
@@ -62,40 +62,20 @@ def ask():
         )
         answer = completion.choices[0].message.content
 
-        # 2. Ses Üretimi (Edge TTS - HIZ AYARI EKLENDİ)
+        # 2. Ses Üretimi (gTTS - En Stabil Yedek)
         audio_base64 = ""
-        
         try:
-            VOICE = "tr-TR-EmelNeural" 
-            RATE = "+18%" 
-            
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_audio:
-                temp_filename = tmp_audio.name
-            
-            command = [
-                'edge-tts',
-                '--text', answer,
-                '--voice', VOICE,
-                '--rate', RATE,
-                '--write-media', temp_filename
-            ]
-            
-            subprocess.run(command, check=True, capture_output=True)
-            
-            with open(temp_filename, 'rb') as f:
-                audio_data = f.read()
-            
-            os.remove(temp_filename)
-
-            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
-
-        except Exception as tts_error:
-            # Yedek: gTTS
+            logging.info("gTTS ile ses üretiliyor (Stabil yedek)...")
             tts = gTTS(text=answer, lang='tr', slow=False)
             audio_buffer = io.BytesIO()
             tts.write_to_fp(audio_buffer)
             audio_buffer.seek(0)
             audio_base64 = base64.b64encode(audio_buffer.read()).decode('utf-8')
+            
+        except Exception as tts_error:
+            logging.error(f"gTTS ses üretimi hatası: {str(tts_error)}", exc_info=True)
+            # Ses üretilemezse boş bırakılır, metin yine de gönderilir
+            pass
 
 
         return jsonify({"answer": answer, "audio_base64": audio_base64})
