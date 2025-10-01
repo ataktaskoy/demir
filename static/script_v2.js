@@ -4,13 +4,14 @@ const sendBtn = document.getElementById("sendBtn");
 const messagesDiv = document.getElementById("messages");
 const recordBtn = document.getElementById("recordBtn");
 
-// --- Ses Kontrolü ---
+// --- Ses ve Durum Kontrolü ---
 let currentAudio = null;
 let isSpeaking = false; 
 let recognition = null; 
+let isBotProcessing = false; // YENİ: Bot işlem yaparken UI'ı kilitlemek için
+let finalTranscript = '';     // YENİ: Sürekli dinleme için son metni tutar
 
 // --- API Ayarları ---
-// KRİTİK DÜZELTME: Artık yerel adres yerine göreceli yol kullanılıyor
 const API_URL = "/ask"; 
 
 // --- Mesajları Ekrana Ekleme ---
@@ -24,151 +25,235 @@ function appendMessage(text, sender) {
 
 // --- Sesli Okuma Fonksiyonu (TTS) ---
 function playAudioFromBase64(base64Data) {
+    // YENİ: Eğer mevcut ses oynuyorsa, durdur
     if (currentAudio) {
         currentAudio.pause();
         currentAudio = null;
     }
+    
+    // Ses verisini oluştur ve oynat
     const audioUrl = `data:audio/mpeg;base64,${base64Data}`;
     currentAudio = new Audio(audioUrl);
     
-    // Ses başladığında animasyonu etkinleştir
     currentAudio.onplay = () => {
         isSpeaking = true;
     };
     
-    // Ses bittiğinde animasyonu devre dışı bırak
     currentAudio.onended = () => {
         isSpeaking = false;
+        isBotProcessing = false; // İşlem bitti
+        // Ses bittiğinde tekrar dinlemeye başla (Sürekli dinleme)
+        startListening(); 
+        setUIEnabled(true);
     };
-    
-    currentAudio.play().catch(error => {
-        console.error("Audio playback failed:", error);
-        isSpeaking = false; 
-    });
+
+    currentAudio.onerror = () => {
+        isSpeaking = false;
+        console.error("Ses oynatma hatası.");
+        isBotProcessing = false;
+        startListening();
+        setUIEnabled(true);
+    };
+
+    // YENİ: Ses hemen oynatılır
+    currentAudio.play().catch(e => console.error("Ses oynatma hatası:", e));
 }
 
-// --- AKTİF MİKROFONU GÜVENLİ ŞEKİLDE DURDURMA FONKSİYONU ---
-function stopRecognitionIfActive() {
-    if (recognition) {
-        try {
-            recognition.stop();
-        } catch (e) {
-            console.warn("Recognition zaten durmuştu veya durdurulurken hata oluştu.");
-        }
-        recognition = null;
-        recordBtn.innerText = "Mikrofon";
-        recordBtn.classList.remove("listening");
+// YENİ: UI Butonlarını kilitleme/açma fonksiyonu (Soru atlamayı çözer)
+function setUIEnabled(enabled) {
+    userInput.disabled = !enabled;
+    sendBtn.disabled = !enabled;
+    // recordBtn artık gizli, ama yine de mantıksal olarak kilitlenir
+    // recordBtn.disabled = !enabled; 
+    
+    if (enabled) {
         userInput.placeholder = "Sorunu yaz...";
+    } else {
+        userInput.placeholder = "Bot cevaplıyor, lütfen bekleyin...";
     }
 }
 
-// --- Mesaj Gönderme Fonksiyonu ---
-async function sendMessage(text) {
-    if (!text) return;
-    
-    stopRecognitionIfActive(); 
-    
-    appendMessage(text, "user");
-    userInput.value = "";
-    sendBtn.disabled = true;
 
+// --- API İsteği Gönderme ---
+async function sendMessage(message) {
+    // YENİ: İşlem devam ediyorsa veya mesaj boşsa gönderme
+    if (isBotProcessing || message.trim() === "") return;
+    
+    // YENİ: İşlem başladığında UI'ı kilitle
+    isBotProcessing = true;
+    setUIEnabled(false);
+    
+    appendMessage(message, "user");
+    userInput.value = "";
+    
     try {
-        // API_URL artık /ask olarak ayarlandığı için Render adresine gidecektir.
-        const response = await fetch(API_URL, { 
+        const response = await fetch(API_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ message: text })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: message })
         });
 
-        const data = await response.json();
-        if (data.error) {
-            // Sunucudan gelen hata mesajını göster
-            appendMessage("Hata: " + data.error, "bot");
-        } else {
-            appendMessage(data.answer, "bot");
-            if (data.audio_base64) {
-                playAudioFromBase64(data.audio_base64);
-            }
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`API Hatası: ${errorData.error || response.statusText}`);
         }
+
+        const data = await response.json();
+        const botText = data.answer;
+        
+        appendMessage(botText, "bot");
+        
+        if (data.audio_base64) {
+            // Sesli yanıtı oynat
+            playAudioFromBase64(data.audio_base64);
+        } else {
+            // Ses yoksa, hemen dinlemeye başla
+            isBotProcessing = false;
+            startListening();
+            setUIEnabled(true);
+        }
+
     } catch (error) {
-        // Sunucuya hiç ulaşılamadığında bu hata çıkar
-        appendMessage("Sunucuya ulaşılamıyor. Lütfen Render'daki uygulamanın 'Live' olduğundan emin olun.", "bot");
-        console.error("Fetch error:", error);
-    } finally {
-        sendBtn.disabled = false;
+        console.error('İstek hatası:', error);
+        appendMessage(`Hata oluştu: ${error.message}`, "bot");
+        isBotProcessing = false;
+        setUIEnabled(true);
+        startListening();
     }
 }
 
-// --- Sesli Komut Fonksiyonu (Web Speech API) ---
-function startVoiceRecognition() {
+// --- Klavye ve Gönder Butonu Olayları ---
+sendBtn.addEventListener('click', () => {
+    sendMessage(userInput.value);
+});
+
+userInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        sendMessage(userInput.value);
+    }
+});
+
+
+// ===============================================
+// YENİ ÖZELLİK: SÜREKLİ DİNLEME ve KESME MANTIĞI
+// ===============================================
+
+function initRecognition() {
+    // Webkit ile başlayan browser'larda SpeechRecognition kullanılır
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-        alert("Üzgünüm, tarayıcınız Ses Tanıma özelliğini desteklemiyor. Lütfen Chrome veya Edge kullanın.");
-        return;
-    }
-
-    if (recognition) {
-        stopRecognitionIfActive();
+        console.error("Tarayıcınız Konuşma Tanımayı desteklemiyor.");
+        recordBtn.style.display = 'none'; // Butonu gizle
         return;
     }
 
     recognition = new SpeechRecognition();
     recognition.lang = 'tr-TR';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    recognition.interimResults = false; // Geçici sonuçları kapat
+    recognition.continuous = true;      // SÜREKLİ DİNLEME: Çok kritik!
 
-    recognition.onstart = () => {
-        recordBtn.innerText = "Dinliyor...";
-        recordBtn.classList.add("listening");
-        userInput.placeholder = "Şimdi konuşun...";
-    };
-
+    // --- Olay Dinleyicileri ---
+    
+    // Ses algılandığında
     recognition.onresult = (event) => {
-        const speechToText = event.results[0][0].transcript;
-        userInput.value = speechToText;
-        sendMessage(speechToText); 
+        // YENİ: Algılanan metin, bir önceki metinle birleştirilir (cümle toplama)
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+            }
+        }
+        
+        // YENİ: Kullanıcı konuşurken bot susmalı
+        if (isSpeaking && currentAudio) {
+            currentAudio.pause();
+            currentAudio = null;
+            isSpeaking = false;
+            // Bot susunca, dinleme işlemini durdurup toplanan cümleyi göndermeye hazırla
+            stopListening();
+        }
     };
 
+    // Dinleme bittiğinde (konuşma durunca veya hata olunca)
     recognition.onend = () => {
-        stopRecognitionIfActive();
+        // YENİ: Toplanan metin varsa, botu durdur ve mesajı gönder
+        if (finalTranscript.trim() !== '') {
+            
+            // Eğer bot işlem yapıyorsa (mesela TTS'i kesmeden önce dinleme durmuşsa), bir anlık bekle
+            if (isBotProcessing) {
+                 setTimeout(() => {
+                    sendMessage(finalTranscript);
+                    finalTranscript = ''; // Metni temizle
+                 }, 100);
+            } else {
+                // Bot boşta ise direkt gönder
+                sendMessage(finalTranscript);
+                finalTranscript = ''; // Metni temizle
+            }
+        } else {
+            // Konuşma yoksa, hemen tekrar dinlemeye başla (sürekli dinleme)
+            if (!isBotProcessing) {
+                 setTimeout(startListening, 500); // Yarım saniye bekleyip tekrar başla
+            }
+        }
     };
 
     recognition.onerror = (event) => {
-        console.error('Ses Tanıma Hatası:', event.error);
-        alert(`Ses Tanıma Hatası: ${event.error}`);
-        stopRecognitionIfActive();
+        console.error('Konuşma Tanıma Hatası:', event.error);
+        if (!isBotProcessing) {
+             // Hata durumunda (izin reddi hariç) tekrar başlat
+             if (event.error !== 'not-allowed') {
+                setTimeout(startListening, 1000); 
+             }
+        }
     };
-
-    recognition.start();
+    
+    // Mikrofon butonunu kaldırıyoruz, artık otomatik
+    recordBtn.style.display = 'none'; 
+    startListening();
 }
 
-// --- Olay Dinleyicileri ---
-sendBtn.addEventListener("click", () => {
-    sendMessage(userInput.value);
-});
 
-userInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") {
-        sendMessage(userInput.value);
+function startListening() {
+    if (!recognition || isBotProcessing) return;
+    try {
+        recognition.start();
+        // console.log('Dinleme Başladı...');
+    } catch (e) {
+        // Bazen zaten dinlemede olduğu için hata verebilir, yoksay
+        if (e.name !== 'InvalidStateError') {
+             console.error("Dinleme başlatma hatası:", e);
+        }
     }
-});
+}
 
-recordBtn.addEventListener("click", startVoiceRecognition);
+function stopListening() {
+    if (recognition) {
+        recognition.stop();
+        // console.log('Dinleme Durdu.');
+    }
+}
 
+// --- Sayfa Yüklendiğinde ---
+window.onload = () => {
+    initRecognition();
+    initThreeJS();
+};
 
-// --- Three.js Animasyonu (Sese Duyarlı Balon/Dalga) ---
+// ===============================================
+// THREE.JS GÖRSELLEŞTİRME KODU (DEĞİŞMEDİ)
+// ===============================================
+
 let scene, camera, renderer, sphere;
 let frameCount = 0;
 
 function initThreeJS() {
-    const canvas = document.getElementById("bgCanvas");
+    const canvas = document.getElementById('bgCanvas');
     const width = window.innerWidth;
     const height = window.innerHeight;
 
     scene = new THREE.Scene();
+
     camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
     camera.position.z = 5;
 
@@ -210,18 +295,14 @@ function animate() {
         audioEffect = (Math.random() * 0.1) + Math.sin(frameCount) * 0.15;
     } else {
         frameCount = 0;
-        audioEffect = 0;
     }
 
-    const scaleFactor = baseScale + audioEffect;
-    
-    sphere.scale.set(scaleFactor, scaleFactor, scaleFactor);
-    
-    sphere.rotation.x += 0.003;
+    // Dönme
+    sphere.rotation.x += 0.005;
     sphere.rotation.y += 0.005;
+
+    // Ses efekti ile ölçeklendirme
+    sphere.scale.set(baseScale + audioEffect, baseScale + audioEffect, baseScale + audioEffect);
 
     renderer.render(scene, camera);
 }
-
-// Sayfa yüklendiğinde animasyonu başlat
-window.onload = initThreeJS;
