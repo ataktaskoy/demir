@@ -30,7 +30,7 @@ function resetUI() {
     // Geri bildirim rengini sıfırla
     userInput.style.backgroundColor = '#161b22'; 
     // Dinlemeyi yeniden başlatmayı garanti et
-    // Timeout ekleyerek recognition.onend olayının tamamen bitmesini bekliyoruz.
+    // 500ms bekleme, tüm olayların (onend/onerror) temizlenmesini sağlar.
     setTimeout(startListening, 500); 
 }
 
@@ -43,7 +43,6 @@ function playAudioFromBase64(base64Data) {
         currentAudio = null;
     }
     
-    // Ses verisini oluştur ve oynat
     const audioUrl = `data:audio/mpeg;base64,${base64Data}`;
     currentAudio = new Audio(audioUrl);
     
@@ -53,21 +52,21 @@ function playAudioFromBase64(base64Data) {
     
     currentAudio.onended = () => {
         isSpeaking = false;
-        // HATA DÜZELTMESİ: Ses bittiğinde UI'ı sıfırla
+        // HATA DÜZELTMESİ: Ses bittiğinde UI'ı sıfırla ve dinlemeyi başlat.
         resetUI(); 
     };
 
     currentAudio.onerror = () => {
         isSpeaking = false;
-        console.error("Ses oynatma hatası. Metin gösteriliyor.");
-        // Hata durumunda UI'ı sıfırla
+        console.error("Ses oynatma hatası.");
+        // Hata durumunda UI'ı sıfırla.
         resetUI();
     };
 
     // Ses hemen oynatılır
     currentAudio.play().catch(e => {
         console.error("Ses oynatma hatası (Auto-play engellendi?).", e);
-        // Oynatma hatasında UI'ı sıfırla
+        // Oynatma hatasında UI'ı sıfırla.
         resetUI();
     });
 }
@@ -75,7 +74,7 @@ function playAudioFromBase64(base64Data) {
 // UI Butonlarını kilitleme/açma fonksiyonu
 function setUIEnabled(enabled) {
     userInput.disabled = !enabled;
-    // KRİTİK DÜZELTME: Artık otomatik gönderim yapacağımız için Gönder butonunu tamamen devre dışı bırakıyoruz.
+    // Gönder butonu her zaman devre dışı/gizli kalmalı.
     sendBtn.disabled = true; 
     
     if (enabled) {
@@ -98,7 +97,7 @@ async function sendMessage(message) {
     // İşlem başladığında UI'ı kilitle ve dinlemeyi durdur
     isBotProcessing = true;
     setUIEnabled(false);
-    stopListening(false); // Dinlemeyi durdur, UI rengini değiştirmesin
+    stopListening(false); // Dinlemeyi durdur, UI rengini değiştirmesin (Bot konuşurken renk farklı olmalı)
 
     
     appendMessage(message, "user");
@@ -137,17 +136,9 @@ async function sendMessage(message) {
     }
 }
 
-// --- Klavye ve Gönder Butonu Olayları ---
-// Klavye olayları sadece acil durumda manuel kullanım için duruyor.
-sendBtn.addEventListener('click', () => {
-    sendMessage(userInput.value);
-});
-
-userInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        sendMessage(userInput.value);
-    }
-});
+// Klavye ve Gönder Butonu Olayları - OTOMATİK İLETİŞİM OLDUĞU İÇİN DEAKTİF KALIYOR
+sendBtn.addEventListener('click', () => { /* Boş */ });
+userInput.addEventListener('keypress', (e) => { /* Boş */ });
 
 
 // ===============================================
@@ -167,10 +158,7 @@ function initRecognition() {
     recognition.lang = 'tr-TR';
     recognition.interimResults = true;  // Anlık (Real-Time) metin sonuçlarını etkinleştir!
     recognition.continuous = true;      // Sürekli dinleme
-    // YENİ KRİTİK AYAR: Sessizlik süresini kısalt (Tarayıcıya bağlıdır, her zaman çalışmaz!)
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-    // recognition.serviceURI = 'https://www.google.com/speech-api/v2/recognize'; // Genelde buna gerek kalmaz.
+    // Sessizlik ayarları tarayıcıya bırakıldı.
 
     // --- Olay Dinleyicileri ---
     
@@ -181,16 +169,15 @@ function initRecognition() {
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             const transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
-                // Konuşma tanıma, cümlenin bittiğine karar verdi.
+                // Metin kesinleştiyse (genelde cümle sonu)
                 finalTranscript += transcript;
             } else {
-                // Henüz tamamlanmamış (interim) metin
+                // Metin henüz kesinleşmedi (interim)
                 interimTranscript += transcript;
             }
         }
         
-        // ANLIK GERİ BİLDİRİM: Metin girişi sırasında input alanına yazdır
-        // YENİ DÜZELTME: Sadece interim metin gösterilir. Final metin gönderildiğinde input boşaltılır.
+        // ANLIK GERİ BİLDİRİM: Konuşuldukça metni göster
         userInput.value = interimTranscript; 
         
         // KRİTİK: Kullanıcı konuşmaya başladıysa ve bot konuşuyorsa, botu ANINDA kes.
@@ -198,22 +185,21 @@ function initRecognition() {
             currentAudio.pause();
             currentAudio = null;
             isSpeaking = false;
-            // Bot kesildiğinde, recognition.onend'in tetiklenmesini beklemeyiz.
-            // Konuşma kesilince, metni toplama olayını kesiyoruz ve dinlemeyi durduruyoruz.
-            // Ancak, kullanıcının konuşmasının bitmesini beklemeliyiz (onend).
+            // Bot kesildiğinde, dinlemeyi durdurup kullanıcının bitirmesini bekleriz.
         }
     };
 
     // Dinleme bittiğinde (sessizlik aralığı dolduğunda)
     recognition.onend = () => {
-        // Otomasyonun anahtarı: Konuşma bittiyse (sessizlik olduysa) ve final metin varsa GÖNDER!
-        if (finalTranscript.trim() !== '') {
-            
+        // HATA DÜZELTMESİ: Final metin veya input kutusunda kalan interim metin varsa GÖNDER!
+        const textToSend = finalTranscript.trim() || userInput.value.trim();
+        
+        if (textToSend) {
             // Konuşma bitti ve metin hazır. UI'daki geçici metni temizle.
             userInput.value = ''; 
             
             // **OTOMATİK GÖNDERİM**: Mesajı yolla.
-            sendMessage(finalTranscript);
+            sendMessage(textToSend);
             finalTranscript = ''; // Metni temizle
             
         } else {
@@ -268,14 +254,13 @@ function stopListening(changeColor = true) {
 window.onload = () => {
     initRecognition();
     initThreeJS();
-    // Gönder butonunu UI'dan kaldırmasak bile mantıksal olarak devre dışı bırakıyoruz.
+    // Gönder butonunu UI'dan kaldırıyoruz.
     sendBtn.style.display = 'none'; 
 };
 
 // ===============================================
 // THREE.JS GÖRSELLEŞTİRME KODU (DEĞİŞMEDİ)
-// ===============================================
-// ... (Bu kısım aynı kalır)
+// ... (Aynı kalır)
 
 let scene, camera, renderer, sphere;
 let frameCount = 0;
