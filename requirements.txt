@@ -2,6 +2,7 @@ flask
 flask-cors
 openai
 edge-tts
-# Yeni Eklenecekler
 Flask-SQLAlchemy
 Flask-Login
+gunicorn
+gevent
