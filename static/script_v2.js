@@ -1,8 +1,9 @@
 // --- DOM Elementleri ---
 const userInput = document.getElementById("userInput");
-const sendBtn = document.getElementById("sendBtn");
 const messagesDiv = document.getElementById("messages");
-const recordBtn = document.getElementById("recordBtn");
+// YENİ BUTONLAR
+const ttsToggleBtn = document.getElementById("ttsToggleBtn"); 
+const micToggleBtn = document.getElementById("micToggleBtn"); 
 
 // --- Ses ve Durum Kontrolü ---
 let currentAudio = null;
@@ -10,6 +11,7 @@ let isSpeaking = false;
 let recognition = null; 
 let isBotProcessing = false; // Bot işlem yaparken UI'ı kilitlemek için
 let finalTranscript = '';     // Sürekli dinleme için son metni tutar
+let ttsEnabled = true;        // YENİ: TTS varsayılan olarak açık
 
 // --- API Ayarları ---
 const API_URL = "/ask"; 
@@ -37,6 +39,12 @@ function resetUI() {
 
 // --- Sesli Okuma Fonksiyonu (TTS) ---
 function playAudioFromBase64(base64Data) {
+    // Eğer TTS kapalıysa, sadece metin gösterip hemen resetle
+    if (!ttsEnabled) {
+        resetUI();
+        return;
+    }
+    
     // Eğer mevcut ses oynuyorsa, durdur
     if (currentAudio) {
         currentAudio.pause();
@@ -52,7 +60,7 @@ function playAudioFromBase64(base64Data) {
     
     currentAudio.onended = () => {
         isSpeaking = false;
-        // HATA DÜZELTMESİ: Ses bittiğinde UI'ı sıfırla ve dinlemeyi başlat.
+        // Ses bittiğinde UI'ı sıfırla ve dinlemeyi başlat.
         resetUI(); 
     };
 
@@ -74,8 +82,8 @@ function playAudioFromBase64(base64Data) {
 // UI Butonlarını kilitleme/açma fonksiyonu
 function setUIEnabled(enabled) {
     userInput.disabled = !enabled;
-    // Gönder butonu her zaman devre dışı/gizli kalmalı.
-    sendBtn.disabled = true; 
+    // Butonları da kilitle (TTS hariç)
+    // micToggleBtn.disabled = !enabled; // Mikrofonu otomatik kontrol ettiğimiz için bu kilitlenmiyor
     
     if (enabled) {
         userInput.placeholder = "Dinliyorum...";
@@ -97,7 +105,7 @@ async function sendMessage(message) {
     // İşlem başladığında UI'ı kilitle ve dinlemeyi durdur
     isBotProcessing = true;
     setUIEnabled(false);
-    stopListening(false); // Dinlemeyi durdur, UI rengini değiştirmesin (Bot konuşurken renk farklı olmalı)
+    stopListening(false); // Dinlemeyi durdur, UI rengini değiştirmesin
 
     
     appendMessage(message, "user");
@@ -120,11 +128,11 @@ async function sendMessage(message) {
         
         appendMessage(botText, "bot");
         
-        if (data.audio_base64) {
-            // Sesli yanıtı oynat
+        if (data.audio_base64 && ttsEnabled) {
+            // Sesli yanıtı oynat (TTS açıksa)
             playAudioFromBase64(data.audio_base64);
         } else {
-            // Ses yoksa, hemen UI'ı sıfırla
+            // Ses yoksa VEYA TTS kapalıysa hemen UI'ı sıfırla ve dinlemeyi başlat
             resetUI();
         }
 
@@ -136,9 +144,31 @@ async function sendMessage(message) {
     }
 }
 
-// Klavye ve Gönder Butonu Olayları - OTOMATİK İLETİŞİM OLDUĞU İÇİN DEAKTİF KALIYOR
-sendBtn.addEventListener('click', () => { /* Boş */ });
-userInput.addEventListener('keypress', (e) => { /* Boş */ });
+// --- Kontrol Butonu Olayları ---
+
+// TTS Aç/Kapat
+ttsToggleBtn.addEventListener('click', () => {
+    ttsEnabled = !ttsEnabled;
+    ttsToggleBtn.innerText = ttsEnabled ? 'Sesi Kapat' : 'Sesi Aç';
+    ttsToggleBtn.classList.toggle('active', ttsEnabled); // Gerekirse CSS'te stil eklenebilir
+    
+    if (!ttsEnabled && isSpeaking && currentAudio) {
+        // Bot konuşurken sesi kapatırsak, botu hemen kesip dinlemeyi başlat
+        currentAudio.pause();
+        currentAudio = null;
+        isSpeaking = false;
+        // UI'ın kilitli kalmaması için hemen resetle
+        resetUI(); 
+    }
+});
+
+// Mikrofon Aç/Kapat (Şimdilik otomatik olduğu için kullanılmayacak, ama altyapısı hazır)
+micToggleBtn.addEventListener('click', () => {
+    if (recognition) {
+        // Normalde burada recognition.stop() ve recognition.start() mantığı olur.
+        // Ama şimdilik sürekli dinleme modundayız.
+    }
+});
 
 
 // ===============================================
@@ -150,7 +180,8 @@ function initRecognition() {
 
     if (!SpeechRecognition) {
         console.error("Tarayıcınız Konuşma Tanımayı desteklemiyor.");
-        recordBtn.style.display = 'none'; 
+        // recordBtn kaldırıldı, yerine micToggleBtn varsa onu gizle
+        if (micToggleBtn) micToggleBtn.style.display = 'none'; 
         return;
     }
 
@@ -158,24 +189,28 @@ function initRecognition() {
     recognition.lang = 'tr-TR';
     recognition.interimResults = true;  // Anlık (Real-Time) metin sonuçlarını etkinleştir!
     recognition.continuous = true;      // Sürekli dinleme
-    // Sessizlik ayarları tarayıcıya bırakıldı.
 
     // --- Olay Dinleyicileri ---
     
     recognition.onresult = (event) => {
         let interimTranscript = '';
-        finalTranscript = '';
+        
+        // KRİTİK: Final metni her zaman sıfırdan hesapla
+        let currentFinalTranscript = '';
         
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             const transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
                 // Metin kesinleştiyse (genelde cümle sonu)
-                finalTranscript += transcript;
+                currentFinalTranscript += transcript;
             } else {
                 // Metin henüz kesinleşmedi (interim)
                 interimTranscript += transcript;
             }
         }
+        
+        // Global finalTranscript'i güncelle (onend için)
+        finalTranscript = currentFinalTranscript;
         
         // ANLIK GERİ BİLDİRİM: Konuşuldukça metni göster
         userInput.value = interimTranscript; 
@@ -191,7 +226,7 @@ function initRecognition() {
 
     // Dinleme bittiğinde (sessizlik aralığı dolduğunda)
     recognition.onend = () => {
-        // HATA DÜZELTMESİ: Final metin veya input kutusunda kalan interim metin varsa GÖNDER!
+        // HATA DÜZELTMESİ: Final metin VEYA input kutusunda kalan interim metin varsa GÖNDER!
         const textToSend = finalTranscript.trim() || userInput.value.trim();
         
         if (textToSend) {
@@ -205,6 +240,7 @@ function initRecognition() {
         } else {
             // Konuşma yoktu, sadece sessizlikti. Bot işlem yapmıyorsa, dinlemeye geri dön.
             if (!isBotProcessing) {
+                 // DÜZELTME: Sürekli döngü için tekrar başlat
                  startListening(); 
             }
         }
@@ -220,8 +256,10 @@ function initRecognition() {
         }
     };
     
-    // Mikrofon butonunu kaldırıyoruz, artık otomatik
-    recordBtn.style.display = 'none'; 
+    // Mikrofon butonu kaldırıldı, yerine micToggleBtn varsa onu gizle
+    if (micToggleBtn) micToggleBtn.style.display = 'none';
+    
+    // Başlangıçta dinlemeyi başlat
     startListening();
 }
 
@@ -254,13 +292,16 @@ function stopListening(changeColor = true) {
 window.onload = () => {
     initRecognition();
     initThreeJS();
-    // Gönder butonunu UI'dan kaldırıyoruz.
-    sendBtn.style.display = 'none'; 
+    // Eski butonlar kaldırıldı
+    const oldSendBtn = document.getElementById("sendBtn");
+    const oldRecordBtn = document.getElementById("recordBtn");
+    if (oldSendBtn) oldSendBtn.style.display = 'none';
+    if (oldRecordBtn) oldRecordBtn.style.display = 'none';
 };
 
 // ===============================================
 // THREE.JS GÖRSELLEŞTİRME KODU (DEĞİŞMEDİ)
-// ... (Aynı kalır)
+// ===============================================
 
 let scene, camera, renderer, sphere;
 let frameCount = 0;
