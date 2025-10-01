@@ -9,11 +9,12 @@ let currentAudio = null;
 let isSpeaking = false; 
 let recognition = null; 
 let isBotProcessing = false; 
-let finalTranscript = '';     
+let finalTranscript = '';     // Kesinleşmiş (Final) metinleri tutar
+let interimTranscript = '';   // YENİ: Kesinleşmemiş (Interim) metinleri tutar
 let ttsEnabled = true;        
 let micEnabled = true;        
 let recognitionActive = false;
-let silenceTimeout = null;    // YENİ KRİTİK ZAMANLAYICI
+let silenceTimeout = null;    
 
 // --- AYARLAR ---
 const API_URL = "/ask"; 
@@ -89,7 +90,6 @@ function setUIEnabled(enabled) {
 
 // --- API İsteği Gönderme ---
 async function sendMessage(message) {
-    // Mesaj göndermeden önce sessizlik zamanlayıcısını temizle
     if (silenceTimeout) {
         clearTimeout(silenceTimeout);
         silenceTimeout = null;
@@ -194,8 +194,9 @@ function initRecognition() {
     };
 
     recognition.onresult = (event) => {
-        let interimTranscript = '';
-        let currentFinalTranscript = '';
+        // Yeni dinleme döngüsünde metinleri sıfırla
+        let newInterimTranscript = '';
+        let newFinalTranscript = '';
         
         // KRİTİK: Sessizlik zamanlayıcısını her yeni ses geldiğinde sıfırla
         if (silenceTimeout) {
@@ -205,32 +206,35 @@ function initRecognition() {
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             const transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
-                currentFinalTranscript += transcript;
+                newFinalTranscript += transcript;
             } else {
-                interimTranscript += transcript;
+                newInterimTranscript += transcript;
             }
         }
         
-        // Global finalTranscript'i güncelle (onend için)
-        finalTranscript = currentFinalTranscript;
-        
-        // ANLIK GERİ BİLDİRİM: Konuşuldukça metni göster
+        // Global değişkenleri güncelle
+        finalTranscript += newFinalTranscript; // Kesinleşmiş metni biriktir
+        interimTranscript = newInterimTranscript; // Anlık metni göster
+
+        // ANLIK GERİ BİLDİRİM: Konuşuldukça metni göster (birikmiş final + anlık interim)
+        // Düzeltme: Sadece anlık metni göstermek daha doğru ve stabil
         userInput.value = interimTranscript; 
         
         // KRİTİK: Konuşma metni varsa, otomatik durdurma zamanlayıcısını başlat
-        if (interimTranscript.length > 0 || currentFinalTranscript.length > 0) {
+        // Kontrol: Eğer konuşma tanıma bir metin üretiyorsa (interim veya final)
+        if (interimTranscript.length > 0 || newFinalTranscript.length > 0) {
             silenceTimeout = setTimeout(() => {
-                // Sessizlik eşiği aşıldı, otomatik olarak dinlemeyi durdur (manuel butona basılmış gibi)
+                // Sessizlik eşiği aşıldı, otomatik olarak dinlemeyi durdur
                 stopListening(); 
             }, SILENCE_THRESHOLD_MS);
         }
 
         // BOTU KESME MANTIĞI
-        if ((interimTranscript.length > 0 || currentFinalTranscript.length > 0) && isSpeaking && currentAudio) {
+        if ((interimTranscript.length > 0 || newFinalTranscript.length > 0) && isSpeaking && currentAudio) {
             currentAudio.pause();
             currentAudio = null;
             isSpeaking = false;
-            // Bot kesildiğinde, durdurma olayı yukarıdaki silenceTimeout tarafından halledilecektir.
+            stopListening(); // Bot kesildiğinde hemen durdur, zamanlayıcı gönderecek
         }
     };
 
@@ -238,21 +242,24 @@ function initRecognition() {
         recognitionActive = false;
         userInput.style.backgroundColor = '#161b22'; 
         
-        // Eğer zamanlayıcı hala çalışıyorsa temizle
         if (silenceTimeout) {
             clearTimeout(silenceTimeout);
             silenceTimeout = null;
         }
-
-        const textToSend = finalTranscript.trim() || userInput.value.trim();
+        
+        // KRİTİK DÜZELTME: GÖNDERİLECEK METİN
+        // Final metin (kesinleşmiş) VEYA interim (o an inputta kalan metin) varsa GÖNDER.
+        const textToSend = (finalTranscript.trim() + " " + userInput.value.trim()).trim();
+        
+        // Gönderim yapıldıktan sonra tüm metinleri sıfırla
+        finalTranscript = ''; 
+        interimTranscript = '';
         
         if (textToSend) {
             userInput.value = ''; 
             sendMessage(textToSend);
-            finalTranscript = ''; 
             
         } else {
-            // Konuşma yoktu, sadece sessizlikti. Bot işlem yapmıyorsa ve mikrofon açıksa, dinlemeye geri dön.
             if (!isBotProcessing && micEnabled) {
                  startListening(); 
             }
@@ -298,7 +305,6 @@ function startListening() {
 function stopListening(changeColor = true) {
     if (recognition && recognitionActive) { 
         recognition.stop();
-        // onend olayı tetiklenecek ve metin gönderilecek.
     }
 }
 
