@@ -135,7 +135,7 @@ userInput.addEventListener('keypress', (e) => {
 
 
 // ===============================================
-// YENİ ÖZELLİK: SÜREKLİ DİNLEME ve KESME MANTIĞI
+// SÜREKLİ DİNLEME ve KESME MANTIĞI
 // ===============================================
 
 function initRecognition() {
@@ -213,11 +213,12 @@ function initRecognition() {
     startListening();
 }
 
-
 function startListening() {
     if (!recognition || isBotProcessing) return;
     try {
         recognition.start();
+        // GÖRSEL GERİ BİLDİRİM: Dinleme başladığında input arka planını yeşil yap
+        userInput.style.backgroundColor = '#2c4a3d'; 
         // console.log('Dinleme Başladı...');
     } catch (e) {
         // Bazen zaten dinlemede olduğu için hata verebilir, yoksay
@@ -230,9 +231,12 @@ function startListening() {
 function stopListening() {
     if (recognition) {
         recognition.stop();
+        // GÖRSEL GERİ BİLDİRİM: Dinleme durduğunda arka planı normale döndür
+        userInput.style.backgroundColor = '#161b22'; 
         // console.log('Dinleme Durdu.');
     }
 }
+
 
 // --- Sayfa Yüklendiğinde ---
 window.onload = () => {
