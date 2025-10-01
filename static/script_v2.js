@@ -1,7 +1,6 @@
 // --- DOM Elementleri ---
 const userInput = document.getElementById("userInput");
 const messagesDiv = document.getElementById("messages");
-// YENİ BUTONLAR
 const ttsToggleBtn = document.getElementById("ttsToggleBtn"); 
 const micToggleBtn = document.getElementById("micToggleBtn"); 
 
@@ -11,7 +10,9 @@ let isSpeaking = false;
 let recognition = null; 
 let isBotProcessing = false; // Bot işlem yaparken UI'ı kilitlemek için
 let finalTranscript = '';     // Sürekli dinleme için son metni tutar
-let ttsEnabled = true;        // YENİ: TTS varsayılan olarak açık
+let ttsEnabled = true;        // TTS varsayılan olarak açık
+let micEnabled = true;        // YENİ: Mikrofon varsayılan olarak açık
+let recognitionActive = false; // YENİ: Konuşma tanıma aktif mi?
 
 // --- API Ayarları ---
 const API_URL = "/ask"; 
@@ -25,15 +26,15 @@ function appendMessage(text, sender) {
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// YENİ: UI durumunu sıfırlayan ana fonksiyon
+// UI durumunu sıfırlayan ana fonksiyon
 function resetUI() {
     isBotProcessing = false;
     setUIEnabled(true);
-    // Geri bildirim rengini sıfırla
-    userInput.style.backgroundColor = '#161b22'; 
-    // Dinlemeyi yeniden başlatmayı garanti et
-    // 500ms bekleme, tüm olayların (onend/onerror) temizlenmesini sağlar.
-    setTimeout(startListening, 500); 
+    userInput.style.backgroundColor = '#161b22'; // Geri bildirim rengini sıfırla
+    // Sadece mikrofon açıksa dinlemeyi başlat
+    if (micEnabled) { 
+        setTimeout(startListening, 500); 
+    }
 }
 
 
@@ -45,7 +46,6 @@ function playAudioFromBase64(base64Data) {
         return;
     }
     
-    // Eğer mevcut ses oynuyorsa, durdur
     if (currentAudio) {
         currentAudio.pause();
         currentAudio = null;
@@ -60,21 +60,17 @@ function playAudioFromBase64(base64Data) {
     
     currentAudio.onended = () => {
         isSpeaking = false;
-        // Ses bittiğinde UI'ı sıfırla ve dinlemeyi başlat.
         resetUI(); 
     };
 
     currentAudio.onerror = () => {
         isSpeaking = false;
         console.error("Ses oynatma hatası.");
-        // Hata durumunda UI'ı sıfırla.
         resetUI();
     };
 
-    // Ses hemen oynatılır
     currentAudio.play().catch(e => {
         console.error("Ses oynatma hatası (Auto-play engellendi?).", e);
-        // Oynatma hatasında UI'ı sıfırla.
         resetUI();
     });
 }
@@ -82,8 +78,8 @@ function playAudioFromBase64(base64Data) {
 // UI Butonlarını kilitleme/açma fonksiyonu
 function setUIEnabled(enabled) {
     userInput.disabled = !enabled;
-    // Butonları da kilitle (TTS hariç)
-    // micToggleBtn.disabled = !enabled; // Mikrofonu otomatik kontrol ettiğimiz için bu kilitlenmiyor
+    // MicToggleBtn sadece dinleme aktifse veya devre dışı bırakılırsa etkilenir.
+    // ttsToggleBtn her zaman aktif kalır.
     
     if (enabled) {
         userInput.placeholder = "Dinliyorum...";
@@ -95,14 +91,11 @@ function setUIEnabled(enabled) {
 
 // --- API İsteği Gönderme ---
 async function sendMessage(message) {
-    // İşlem devam ediyorsa veya mesaj boşsa gönderme
     if (isBotProcessing || message.trim() === "") {
-        // Eğer boş mesaj gelirse bile dinlemeyi resetle.
         if (message.trim() === "") resetUI(); 
         return;
     }
     
-    // İşlem başladığında UI'ı kilitle ve dinlemeyi durdur
     isBotProcessing = true;
     setUIEnabled(false);
     stopListening(false); // Dinlemeyi durdur, UI rengini değiştirmesin
@@ -129,17 +122,14 @@ async function sendMessage(message) {
         appendMessage(botText, "bot");
         
         if (data.audio_base64 && ttsEnabled) {
-            // Sesli yanıtı oynat (TTS açıksa)
             playAudioFromBase64(data.audio_base64);
         } else {
-            // Ses yoksa VEYA TTS kapalıysa hemen UI'ı sıfırla ve dinlemeyi başlat
             resetUI();
         }
 
     } catch (error) {
         console.error('İstek hatası:', error);
         appendMessage(`Hata oluştu: ${error.message}`, "bot");
-        // Hata durumunda UI'ı sıfırla
         resetUI();
     }
 }
@@ -149,24 +139,28 @@ async function sendMessage(message) {
 // TTS Aç/Kapat
 ttsToggleBtn.addEventListener('click', () => {
     ttsEnabled = !ttsEnabled;
-    ttsToggleBtn.innerText = ttsEnabled ? 'Sesi Kapat' : 'Sesi Aç';
-    ttsToggleBtn.classList.toggle('active', ttsEnabled); // Gerekirse CSS'te stil eklenebilir
+    ttsToggleBtn.innerHTML = ttsEnabled ? '<i class="fas fa-volume-up"></i>' : '<i class="fas fa-volume-mute"></i>';
+    ttsToggleBtn.classList.toggle('active', ttsEnabled); 
     
     if (!ttsEnabled && isSpeaking && currentAudio) {
         // Bot konuşurken sesi kapatırsak, botu hemen kesip dinlemeyi başlat
         currentAudio.pause();
         currentAudio = null;
         isSpeaking = false;
-        // UI'ın kilitli kalmaması için hemen resetle
         resetUI(); 
     }
 });
 
-// Mikrofon Aç/Kapat (Şimdilik otomatik olduğu için kullanılmayacak, ama altyapısı hazır)
+// Mikrofon Aç/Kapat
 micToggleBtn.addEventListener('click', () => {
-    if (recognition) {
-        // Normalde burada recognition.stop() ve recognition.start() mantığı olur.
-        // Ama şimdilik sürekli dinleme modundayız.
+    micEnabled = !micEnabled;
+    micToggleBtn.innerHTML = micEnabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
+    micToggleBtn.classList.toggle('active', micEnabled);
+
+    if (micEnabled) {
+        startListening();
+    } else {
+        stopListening();
     }
 });
 
@@ -180,36 +174,36 @@ function initRecognition() {
 
     if (!SpeechRecognition) {
         console.error("Tarayıcınız Konuşma Tanımayı desteklemiyor.");
-        // recordBtn kaldırıldı, yerine micToggleBtn varsa onu gizle
-        if (micToggleBtn) micToggleBtn.style.display = 'none'; 
+        micToggleBtn.style.display = 'none'; // Butonu gizle
         return;
     }
 
     recognition = new SpeechRecognition();
     recognition.lang = 'tr-TR';
-    recognition.interimResults = true;  // Anlık (Real-Time) metin sonuçlarını etkinleştir!
-    recognition.continuous = true;      // Sürekli dinleme
+    recognition.interimResults = true;  
+    recognition.continuous = true;      
 
     // --- Olay Dinleyicileri ---
     
+    recognition.onstart = () => { // YENİ: Dinleme başladığında aktif olarak işaretle
+        recognitionActive = true;
+        userInput.style.backgroundColor = '#2c4a3d'; // Yeşil renk
+    };
+
     recognition.onresult = (event) => {
         let interimTranscript = '';
-        
-        // KRİTİK: Final metni her zaman sıfırdan hesapla
         let currentFinalTranscript = '';
         
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             const transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
-                // Metin kesinleştiyse (genelde cümle sonu)
                 currentFinalTranscript += transcript;
             } else {
-                // Metin henüz kesinleşmedi (interim)
                 interimTranscript += transcript;
             }
         }
         
-        // Global finalTranscript'i güncelle (onend için)
+        // finalTranscript'i onend için güncelle
         finalTranscript = currentFinalTranscript;
         
         // ANLIK GERİ BİLDİRİM: Konuşuldukça metni göster
@@ -220,27 +214,26 @@ function initRecognition() {
             currentAudio.pause();
             currentAudio = null;
             isSpeaking = false;
-            // Bot kesildiğinde, dinlemeyi durdurup kullanıcının bitirmesini bekleriz.
+            // Bot kesildiğinde dinlemeyi durdur. onend olayı mesajı gönderecek.
+            // Bu, döngüyü bozmaz, sadece bir konuşma döngüsünü tamamlar.
+            stopListening();
         }
     };
 
-    // Dinleme bittiğinde (sessizlik aralığı dolduğunda)
-    recognition.onend = () => {
-        // HATA DÜZELTMESİ: Final metin VEYA input kutusunda kalan interim metin varsa GÖNDER!
+    recognition.onend = () => { // YENİ: Dinleme bittiğinde pasif olarak işaretle
+        recognitionActive = false;
+        userInput.style.backgroundColor = '#161b22'; // Normal renk
+        
         const textToSend = finalTranscript.trim() || userInput.value.trim();
         
         if (textToSend) {
-            // Konuşma bitti ve metin hazır. UI'daki geçici metni temizle.
             userInput.value = ''; 
-            
-            // **OTOMATİK GÖNDERİM**: Mesajı yolla.
             sendMessage(textToSend);
-            finalTranscript = ''; // Metni temizle
+            finalTranscript = ''; 
             
         } else {
-            // Konuşma yoktu, sadece sessizlikti. Bot işlem yapmıyorsa, dinlemeye geri dön.
-            if (!isBotProcessing) {
-                 // DÜZELTME: Sürekli döngü için tekrar başlat
+            // Konuşma yoktu, sadece sessizlikti. Bot işlem yapmıyorsa ve mikrofon açıksa, dinlemeye geri dön.
+            if (!isBotProcessing && micEnabled) {
                  startListening(); 
             }
         }
@@ -248,27 +241,32 @@ function initRecognition() {
 
     recognition.onerror = (event) => {
         console.error('Konuşma Tanıma Hatası:', event.error);
-        if (!isBotProcessing) {
-             if (event.error !== 'not-allowed') {
-                // Hata durumunda dinlemeyi tekrar başlat
+        recognitionActive = false; // Hata durumunda da pasif olarak işaretle
+        userInput.style.backgroundColor = '#161b22'; // Normal renk
+        if (!isBotProcessing && micEnabled) {
+             if (event.error !== 'not-allowed') { // İzin reddi hariç tekrar başlat
                 startListening(); 
+             } else {
+                 console.error("Mikrofon izni reddedildi. Lütfen tarayıcı ayarlarından izni verin.");
+                 micEnabled = false; // Mikrofonu kapat
+                 micToggleBtn.innerHTML = '<i class="fas fa-microphone-slash"></i>';
+                 micToggleBtn.classList.remove('active');
+                 userInput.placeholder = "Mikrofon izni gerekli.";
              }
         }
     };
     
-    // Mikrofon butonu kaldırıldı, yerine micToggleBtn varsa onu gizle
-    if (micToggleBtn) micToggleBtn.style.display = 'none';
-    
-    // Başlangıçta dinlemeyi başlat
-    startListening();
+    // Başlangıçta mikrofon açıksa dinlemeyi başlat
+    if (micEnabled) {
+        startListening();
+    }
 }
 
+// YENİ: Dinlemeyi başlatan fonksiyon
 function startListening() {
-    if (!recognition || isBotProcessing) return;
+    if (!recognition || isBotProcessing || recognitionActive || !micEnabled) return;
     try {
         recognition.start();
-        // GÖRSEL GERİ BİLDİRİM: Dinleme başladığında input arka planını yeşil yap
-        userInput.style.backgroundColor = '#2c4a3d'; 
     } catch (e) {
         if (e.name !== 'InvalidStateError') {
              console.error("Dinleme başlatma hatası:", e);
@@ -276,14 +274,11 @@ function startListening() {
     }
 }
 
-// KRİTİK DÜZELTME: Rengi değiştirmemek için opsiyonel parametre
+// YENİ: Dinlemeyi durduran fonksiyon
 function stopListening(changeColor = true) {
-    if (recognition) {
+    if (recognition && recognitionActive) { // Sadece aktifse durdur
         recognition.stop();
-        if (changeColor) {
-            // GÖRSEL GERİ BİLDİRİM: Dinleme durduğunda arka planı normale döndür
-            userInput.style.backgroundColor = '#161b22'; 
-        }
+        // onend olayının tetiklenmesini bekleriz, renk değişimi orada yapılır.
     }
 }
 
@@ -292,11 +287,12 @@ function stopListening(changeColor = true) {
 window.onload = () => {
     initRecognition();
     initThreeJS();
-    // Eski butonlar kaldırıldı
-    const oldSendBtn = document.getElementById("sendBtn");
-    const oldRecordBtn = document.getElementById("recordBtn");
-    if (oldSendBtn) oldSendBtn.style.display = 'none';
-    if (oldRecordBtn) oldRecordBtn.style.display = 'none';
+    
+    // TTS butonu varsayılan durumu ayarla
+    ttsToggleBtn.classList.add('active'); // CSS'te başlangıçta aktif olduğunu göster.
+    
+    // Mic butonu varsayılan durumu ayarla
+    micToggleBtn.classList.add('active'); // CSS'te başlangıçta aktif olduğunu göster.
 };
 
 // ===============================================

@@ -18,6 +18,8 @@ body {
     position: fixed;
     top: 0;
     left: 0;
+    width: 100%; /* Genişlik ve yükseklik eklendi */
+    height: 100%;
     z-index: -1;
     opacity: 0.4; /* Animasyon belirgin ama rahatsız etmiyor */
 }
@@ -31,6 +33,10 @@ body {
     border-radius: 10px;
     box-shadow: 0 0 50px rgba(88, 166, 255, 0.15); /* Hafif gölge efekti */
     z-index: 10;
+    display: flex; /* İçerikleri düzenlemek için flexbox */
+    flex-direction: column; /* Dikey hizalama */
+    justify-content: space-between; /* İçerik arasında boşluk */
+    height: 80vh; /* Yüksekliği sabitleme (örnek) */
 }
 
 /* Başlıklar ve Metin */
@@ -49,7 +55,7 @@ p {
 
 /* Mesajlar Alanı */
 #messages {
-    height: 350px; 
+    flex-grow: 1; /* Mesajların tüm dikey alanı kaplamasını sağla */
     overflow-y: auto;
     margin-bottom: 15px;
     padding: 10px;
@@ -83,10 +89,11 @@ p {
     margin-right: auto;
 }
 
-/* Giriş Alanı */
+/* Giriş Alanı ve Buton Konteyneri */
 .input-container {
     display: flex;
-    gap: 8px;
+    gap: 8px; /* Metin alanı ve buton grubu arasında boşluk */
+    align-items: center; /* Dikeyde hizala */
 }
 
 #userInput {
@@ -97,7 +104,7 @@ p {
     background-color: #161b22; 
     color: #c9d1d9;
     font-size: 1em;
-    transition: background-color 0.3s ease; /* YENİ: Yumuşak renk geçişi */
+    transition: background-color 0.3s ease; /* Yumuşak renk geçişi */
 }
 
 #userInput:focus {
@@ -106,26 +113,43 @@ p {
     box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.5);
 }
 
-/* Butonlar */
-#sendBtn, #recordBtn {
-    padding: 10px 15px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: background-color 0.2s;
+/* Kontrol Butonları Konteyneri */
+.control-buttons {
+    display: flex;
+    gap: 8px; /* Butonlar arasında boşluk */
 }
 
-#sendBtn {
-    background-color: #238636;
+/* Şık Kontrol Butonları */
+.control-button {
+    width: 40px; /* Yuvarlak buton boyutu */
+    height: 40px;
+    border-radius: 50%; /* Yuvarlak şekil */
+    border: none;
+    background-color: #30363d; /* Varsayılan koyu renk */
+    color: #c9d1d9; /* İkon rengi */
+    font-size: 1.1em;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: background-color 0.2s, color 0.2s, box-shadow 0.2s;
+}
+
+.control-button:hover {
+    background-color: #444c56; /* Hover rengi */
     color: white;
 }
 
-#sendBtn:hover {
+.control-button.active {
+    background-color: #238636; /* Aktif/Açık durumu */
+    color: white;
+}
+
+.control-button.active:hover {
     background-color: #2ea043;
 }
 
-#sendBtn:disabled {
+.control-button.disabled {
     background-color: #30363d;
     color: #8b949e;
     cursor: not-allowed;
