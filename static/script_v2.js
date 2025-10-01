@@ -8,8 +8,8 @@ const recordBtn = document.getElementById("recordBtn");
 let currentAudio = null;
 let isSpeaking = false; 
 let recognition = null; 
-let isBotProcessing = false; // YENİ: Bot işlem yaparken UI'ı kilitlemek için
-let finalTranscript = '';     // YENİ: Sürekli dinleme için son metni tutar
+let isBotProcessing = false; // Bot işlem yaparken UI'ı kilitlemek için
+let finalTranscript = '';     // Sürekli dinleme için son metni tutar
 
 // --- API Ayarları ---
 const API_URL = "/ask"; 
@@ -25,7 +25,7 @@ function appendMessage(text, sender) {
 
 // --- Sesli Okuma Fonksiyonu (TTS) ---
 function playAudioFromBase64(base64Data) {
-    // YENİ: Eğer mevcut ses oynuyorsa, durdur
+    // Eğer mevcut ses oynuyorsa, durdur
     if (currentAudio) {
         currentAudio.pause();
         currentAudio = null;
@@ -42,7 +42,6 @@ function playAudioFromBase64(base64Data) {
     currentAudio.onended = () => {
         isSpeaking = false;
         isBotProcessing = false; // İşlem bitti
-        // Ses bittiğinde tekrar dinlemeye başla (Sürekli dinleme)
         startListening(); 
         setUIEnabled(true);
     };
@@ -55,16 +54,14 @@ function playAudioFromBase64(base64Data) {
         setUIEnabled(true);
     };
 
-    // YENİ: Ses hemen oynatılır
+    // Ses hemen oynatılır
     currentAudio.play().catch(e => console.error("Ses oynatma hatası:", e));
 }
 
-// YENİ: UI Butonlarını kilitleme/açma fonksiyonu (Soru atlamayı çözer)
+// UI Butonlarını kilitleme/açma fonksiyonu
 function setUIEnabled(enabled) {
     userInput.disabled = !enabled;
     sendBtn.disabled = !enabled;
-    // recordBtn artık gizli, ama yine de mantıksal olarak kilitlenir
-    // recordBtn.disabled = !enabled; 
     
     if (enabled) {
         userInput.placeholder = "Sorunu yaz...";
@@ -76,10 +73,10 @@ function setUIEnabled(enabled) {
 
 // --- API İsteği Gönderme ---
 async function sendMessage(message) {
-    // YENİ: İşlem devam ediyorsa veya mesaj boşsa gönderme
+    // İşlem devam ediyorsa veya mesaj boşsa gönderme
     if (isBotProcessing || message.trim() === "") return;
     
-    // YENİ: İşlem başladığında UI'ı kilitle
+    // İşlem başladığında UI'ı kilitle
     isBotProcessing = true;
     setUIEnabled(false);
     
@@ -135,11 +132,10 @@ userInput.addEventListener('keypress', (e) => {
 
 
 // ===============================================
-// SÜREKLİ DİNLEME ve KESME MANTIĞI
+// SÜREKLİ DİNLEME ve ANLIK METİN ÇEVİRİ MANTIĞI
 // ===============================================
 
 function initRecognition() {
-    // Webkit ile başlayan browser'larda SpeechRecognition kullanılır
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
@@ -150,36 +146,42 @@ function initRecognition() {
 
     recognition = new SpeechRecognition();
     recognition.lang = 'tr-TR';
-    recognition.interimResults = false; // Geçici sonuçları kapat
-    recognition.continuous = true;      // SÜREKLİ DİNLEME: Çok kritik!
+    recognition.interimResults = true;  // KRİTİK: Anlık (Real-Time) metin sonuçlarını etkinleştir!
+    recognition.continuous = true;      // Sürekli dinleme
 
     // --- Olay Dinleyicileri ---
     
-    // Ses algılandığında
     recognition.onresult = (event) => {
-        // YENİ: Algılanan metin, bir önceki metinle birleştirilir (cümle toplama)
+        let interimTranscript = '';
+        finalTranscript = '';
+        
         for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
+                finalTranscript += transcript;
+            } else {
+                interimTranscript += transcript;
             }
         }
         
-        // YENİ: Kullanıcı konuşurken bot susmalı
-        if (isSpeaking && currentAudio) {
+        // ANLIK GERİ BİLDİRİM: Metin girişi sırasında input alanına yazdır
+        userInput.value = interimTranscript; 
+        
+        // Konuşma algılandıysa ve bot konuşuyorsa, botu kes
+        if (interimTranscript.length > 0 && isSpeaking && currentAudio) {
             currentAudio.pause();
             currentAudio = null;
             isSpeaking = false;
-            // Bot susunca, dinleme işlemini durdurup toplanan cümleyi göndermeye hazırla
             stopListening();
         }
     };
 
-    // Dinleme bittiğinde (konuşma durunca veya hata olunca)
+    // Dinleme bittiğinde (sessizlik aralığı dolduğunda)
     recognition.onend = () => {
-        // YENİ: Toplanan metin varsa, botu durdur ve mesajı gönder
+        // Tamamlanmış (Final) bir metin varsa, sunucuya gönder
         if (finalTranscript.trim() !== '') {
             
-            // Eğer bot işlem yapıyorsa (mesela TTS'i kesmeden önce dinleme durmuşsa), bir anlık bekle
+            // Eğer bot işlem yapıyorsa (mesela TTS'i kesmeden önce dinleme durmuşsa)
             if (isBotProcessing) {
                  setTimeout(() => {
                     sendMessage(finalTranscript);
@@ -219,7 +221,6 @@ function startListening() {
         recognition.start();
         // GÖRSEL GERİ BİLDİRİM: Dinleme başladığında input arka planını yeşil yap
         userInput.style.backgroundColor = '#2c4a3d'; 
-        // console.log('Dinleme Başladı...');
     } catch (e) {
         // Bazen zaten dinlemede olduğu için hata verebilir, yoksay
         if (e.name !== 'InvalidStateError') {
@@ -233,7 +234,6 @@ function stopListening() {
         recognition.stop();
         // GÖRSEL GERİ BİLDİRİM: Dinleme durduğunda arka planı normale döndür
         userInput.style.backgroundColor = '#161b22'; 
-        // console.log('Dinleme Durdu.');
     }
 }
 
