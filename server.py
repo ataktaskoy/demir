@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory, session # 'session' eklendi
+from flask import Flask, request, jsonify, send_from_directory, session
 from flask_cors import CORS
 import openai
 import base64
@@ -14,7 +14,6 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
 
 # Session verisini güvenli hale getirmek için SECRET_KEY eklenmeli.
-# Render'da Ortam Değişkeni olarak ekleyeceğiz.
 # Ortam değişkeni yoksa geçici bir anahtar kullanır.
 app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "flask_guvenli_gizli_anahtar_degistirilmeli")
 
@@ -22,7 +21,7 @@ app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "flask_guvenli_gizli_ana
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- AI MODEL AYARLARI ---
-# Hız ve düşük maliyet için Claude 3 Haiku'ya geçiş (OpenRouter üzerinden)
+# Hız ve düşük maliyet için Claude 3 Haiku (OpenRouter üzerinden)
 MODEL_NAME = "anthropic/claude-3-haiku" 
 
 # API Anahtarı: Ortam değişkenlerinden güvenli bir şekilde alınır
@@ -47,13 +46,17 @@ def ask():
     # 1. OTURUM HAFIZASI YÜKLEME VEYA BAŞLATMA
     # Session'da mesaj geçmişi yoksa, varsayılan (system prompt) ile başlat.
     if 'messages' not in session:
-        # **Sistem Talimatı (Prompt)**: Yaş, derse odaklama ve 'Aa' filtresi burada.
-        # Yaş hesaplamasını modelin yapması için BUGÜNÜN TARİHİ eklenir.
+        # **Sistem Talimatı (Prompt) GÜNCELLEMESİ**: Sadece davranışsal kural ve öğrenme talimatları kalmıştır.
         system_prompt = f"""
-        Sen 17.11.2013 doğumlu, ilkokul 4. sınıf öğrencisi Demir'e derslerinde yardımcı olan bir yapay zeka öğretmenisin.
+        Sen, öğrencilere derslerinde yardımcı olan yapay zeka bir eğitmensin.
         BUGÜNÜN TARİHİ: {time.strftime('%Y-%m-%d')}
-        Lütfen Demir'i sık sık derslere ve ödevlerine odaklamaya çalış (ancak sürekli aynı şeyi tekrarlama). Cevapların kısa, net, motive edici ve akıcı olsun.
-        'Aa' veya 'Vaay' gibi sesli algılama hatalarını görmezden gel, sadece anlamlı cümlelere odaklan.
+        Senin görevin, adın Demir olan öğrencine odaklanmak ve onun hakkında öğrendiğin bilgileri (yaşı, sınıfı, doğum günü, hobileri vb.) bu oturum boyunca unutmaman. 
+        Lütfen Demir'i sık sık derslere ve ödevlerine odaklamaya çalış.
+
+        KESİNLİKLE UYULMASI GEREKEN KURALLAR:
+        1. ASLA "Vay", "Hmm", "Aaa", "Anadolu Ajansı", "haha" gibi tek kelimelik sesler, kısaltmalar veya ünlemler kullanma. Cevapların tamamen düzgün, uzun cümlelerden oluşmalıdır.
+        2. Cevapların kısa, net, motive edici ve akıcı olsun.
+        3. Sesli algılama hatalarını görmezden gel, sadece anlamlı cümlelere odaklan.
         """
         session['messages'] = [{"role": "system", "content": system_prompt.strip()}]
     
@@ -75,7 +78,7 @@ def ask():
         # API çağrısı için artık tüm hafızadaki mesajları (session['messages']) gönder
         completion = client_openai.chat.completions.create(
             model=MODEL_NAME,
-            messages=session['messages'], # BURASI HAFIZA İÇİN KRİTİK DEĞİŞİKLİK
+            messages=session['messages'], # HAFIZA İÇİN KRİTİK KISIM
             stream=False, 
         )
         
@@ -89,7 +92,7 @@ def ask():
         try:
             # TTS AYARLARI
             VOICE = "tr-TR-EmelNeural"
-            RATE = "+18%" 
+            RATE = "+18%" # Hızlı konuşma ayarı.
             
             # Geçici dosya oluşturma
             with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_audio:
@@ -104,7 +107,6 @@ def ask():
                 '--write-media', temp_filename
             ]
             
-            # Subprocess ile komutu çalıştır. Docker'da FFmpeg olduğu için çalışır.
             subprocess.run(command, check=True, capture_output=True)
             
             # Ses verisini oku ve base64'e çevir
