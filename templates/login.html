@@ -3,139 +3,162 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Giriş Yap - AI Öğretmen</title>
-    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <title>Giriş / Kayıt</title>
+    <link rel="stylesheet" href="style.css"> 
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-            background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: #e6edf3;
-            padding: 20px;
-        }
-
-        .login-container {
-            background: rgba(22, 27, 34, 0.9);
-            padding: 40px;
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-            width: 100%;
-            max-width: 400px;
-            border: 1px solid #30363d;
-        }
-
-        .login-container h2 {
+        /* Genel konteyner */
+        #auth-container {
+            width: 400px;
+            max-width: 90%;
+            background: rgba(13, 17, 23, 0.9);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             text-align: center;
-            margin-bottom: 30px;
-            color: #58a6ff;
         }
 
-        .input-group {
+        /* Sekme navigasyonu (Giriş/Kayıt) */
+        .tab-nav {
+            display: flex;
             margin-bottom: 20px;
+            border-bottom: 2px solid #30363d;
         }
 
-        .input-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-size: 0.9em;
+        .tab-button {
+            flex-grow: 1;
+            padding: 10px 0;
+            cursor: pointer;
+            background: none;
+            border: none;
             color: #c9d1d9;
+            font-size: 1.1em;
+            transition: color 0.3s, border-bottom 0.3s;
         }
 
-        .input-group input {
+        .tab-button.active {
+            color: #58a6ff;
+            border-bottom: 2px solid #58a6ff;
+        }
+
+        /* Form Stillendirmesi */
+        .form-container input[type="text"],
+        .form-container input[type="email"],
+        .form-container input[type="password"] {
             width: 100%;
-            padding: 12px;
-            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            border-radius: 6px;
             border: 1px solid #30363d;
             background-color: #161b22;
             color: #e6edf3;
-            font-size: 1em;
-            transition: border-color 0.3s;
+            box-sizing: border-box;
         }
 
-        .input-group input:focus {
-            outline: none;
-            border-color: #58a6ff;
-        }
-
-        .btn-login {
+        .submit-button {
             width: 100%;
-            padding: 12px;
+            padding: 10px 15px;
             border: none;
-            border-radius: 8px;
-            background-color: #58a6ff;
+            border-radius: 6px;
+            background-color: #238636;
             color: white;
             font-size: 1.1em;
-            font-weight: bold;
             cursor: pointer;
             transition: background-color 0.3s;
         }
 
-        .btn-login:hover {
-            background-color: #79b8ff;
+        .submit-button:hover {
+            background-color: #2ea043;
         }
 
-        #errorMessage {
-            text-align: center;
-            margin-bottom: 15px;
+        .error-message {
+            color: #f85149;
+            margin-top: 10px;
             padding: 10px;
+            background: rgba(248, 81, 73, 0.1);
             border-radius: 6px;
-            color: #ff7b72;
-            background: rgba(255, 123, 114, 0.1);
-        }
-        
-        .register-link {
-            text-align: center;
-            margin-top: 20px;
             font-size: 0.9em;
         }
 
-        .register-link a {
-            color: #58a6ff;
-            text-decoration: none;
+        /* Varsayılan Arka Plan Stili */
+        body {
+            font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #0d1117; 
+            color: #e6edf3;
         }
     </style>
 </head>
 <body>
-    <div class="login-container">
-        <h2>{% if admin_mode %}Admin Girişi{% else %}Giriş Yap{% endif %}</h2>
+    <div id="auth-container">
+        <h2>{{ 'Admin Girişi' if is_admin_login else 'Eğitim Platformu Girişi' }}</h2>
 
-        {% if error %}
-            <div id="errorMessage">{{ error }}</div>
-        {% endif %}
-
-        <form id="loginForm" method="POST" action="">
-            <div class="input-group">
-                <label for="username">Kullanıcı Adı</label>
-                <input type="text" id="username" name="username" required autocomplete="username">
-            </div>
-
-            <div class="input-group">
-                <label for="password">Şifre</label>
-                <input type="password" id="password" name="password" required autocomplete="current-password">
-            </div>
-
-            <button type="submit" class="btn-login">Giriş Yap</button>
-        </form>
-
-        {% if not admin_mode %}
-        <div class="register-link">
-            Hesabınız yok mu? <a href="/register">Hemen Kayıt Ol</a>
+        {% if not is_admin_login %}
+        <div class="tab-nav">
+            <button id="loginTab" class="tab-button {% if not is_register %}active{% endif %}">Giriş Yap</button>
+            <button id="registerTab" class="tab-button {% if is_register %}active{% endif %}">Kayıt Ol</button>
         </div>
         {% endif %}
+
+        <form method="POST" action="{% if is_admin_login %}/admin{% else %}/login{% endif %}" id="loginForm" class="form-container" style="display: {% if is_register %}none{% else %}block{% endif %};">
+            <input type="text" name="username" placeholder="Kullanıcı Adı" required>
+            <input type="password" name="password" placeholder="Şifre" required>
+            <button type="submit" class="submit-button">Giriş Yap</button>
+        </form>
+
+        {% if not is_admin_login %}
+        <form method="POST" action="/register" id="registerForm" class="form-container" style="display: {% if is_register %}block{% else %}none{% endif %};">
+            <input type="text" name="name" placeholder="İsim (Gerekli)" required>
+            <input type="text" name="surname" placeholder="Soyisim (Gerekli)" required>
+            <input type="text" name="username" placeholder="Kullanıcı Adı (Gerekli)" required>
+            <input type="email" name="email" placeholder="E-posta Adresi (Gerekli)" required>
+            <input type="text" name="phone" placeholder="Telefon Numarası (Opsiyonel)">
+            <input type="password" name="password" placeholder="Şifre (Gerekli)" required>
+            <button type="submit" class="submit-button">Hemen Kayıt Ol</button>
+        </form>
+        {% endif %}
+
+        {% if error %}
+            <p class="error-message">{{ error }}</p>
+        {% endif %}
     </div>
-    
+
     <script>
-        // Formun /admin veya /login adresine gönderilmesini sağlar
-        document.getElementById('loginForm').action = window.location.pathname;
+        document.addEventListener('DOMContentLoaded', function() {
+            const loginTab = document.getElementById('loginTab');
+            const registerTab = document.getElementById('registerTab');
+            const loginForm = document.getElementById('loginForm');
+            const registerForm = document.getElementById('registerForm');
+            
+            if (loginTab && registerTab) {
+                const isRegisterPage = {{ 'true' if is_register else 'false' }};
+
+                if (isRegisterPage) {
+                    loginTab.classList.remove('active');
+                    registerTab.classList.add('active');
+                    loginForm.style.display = 'none';
+                    registerForm.style.display = 'block';
+                } else {
+                    loginTab.classList.add('active');
+                    registerTab.classList.remove('active');
+                    loginForm.style.display = 'block';
+                    registerForm.style.display = 'none';
+                }
+
+                loginTab.addEventListener('click', function() {
+                    window.location.href = '{{ url_for("login") }}';
+                });
+
+                registerTab.addEventListener('click', function() {
+                    window.location.href = '{{ url_for("register") }}';
+                });
+            }
+        });
     </script>
 </body>
 </html>

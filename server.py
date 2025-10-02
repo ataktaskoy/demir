@@ -12,8 +12,10 @@ import json
 import time 
 import jwt 
 from werkzeug.security import generate_password_hash, check_password_hash
+# EKLENEN/DÜZENLENEN İÇE AKTARMALAR
 from functools import wraps
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta 
+
 
 # --- Uygulama ve Veritabanı Yapılandırması ---
 app = Flask(__name__, static_folder="static", static_url_path="")
@@ -34,59 +36,276 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # API Anahtarı
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
+# --- Flask-Login Kullanıcı Yöneticisi ---
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(User, int(user_id))
+
+
 # --- Veritabanı Modelleri ---
-class User(UserMixin, db.Model):
+class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(500), nullable=False)
-    is_admin = db.Column(db.Boolean, default=False)
-    is_active_member = db.Column(db.Boolean, default=False) # Ücretli üye/tam üye
-    demo_chat_count = db.Column(db.Integer, default=5) # Demo chat hakkı
-    date_joined = db.Column(db.DateTime, default=datetime.utcnow)
+    email = db.Column(db.String(120), unique=True, nullable=False) 
+    # Kayıt formunda istenen alanlar
+    name = db.Column(db.String(100), nullable=True)     
+    surname = db.Column(db.String(100), nullable=True)  
+    phone = db.Column(db.String(20), nullable=True)     
+    # Diğer alanlar
+    password_hash = db.Column(db.String(128), nullable=False)
+    is_active_member = db.Column(db.Boolean, default=False)
+    demo_chat_count = db.Column(db.Integer, default=5)
+    grade = db.Column(db.String(50), nullable=True) # Kullanıcı sınıfı/seviyesi
+    date_joined = db.Column(db.DateTime, default=db.func.now())
+    
+    chats = db.relationship('Chat', backref='author', lazy='dynamic')
+    
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
 
 class Chat(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     message = db.Column(db.Text, nullable=False)
-    role = db.Column(db.String(10), nullable=False) # 'user' veya 'assistant'
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    user = db.relationship('User', backref=db.backref('chats', lazy=True))
+    response = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, default=db.func.now())
 
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
 
-# --- KRİTİK Veritabanı Başlatma ---
-# Gunicorn altında dahi çalışması için app context'i burada çağırıyoruz.
-with app.app_context():
-    db.create_all()
+# --- Rotalar ---
 
-# --- ADMIN PANELİ FONKSİYONLARI ---
+# Ana Sayfa Rotası (Sohbet Arayüzü)
+@app.route('/')
+@login_required
+def index():
+    return render_template('index.html')
 
-# Admin girişi için statik bilgiler (GERÇEKTE VERİTABANINDAN OKUNMALIDIR)
-ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
-# Lütfen KENDİ hash'inizi buraya veya Render ENV'ye ekleyin.
-ADMIN_PASSWORD_HASH = os.environ.get('ADMIN_PASSWORD_HASH', 'pbkdf2:sha256:600000$Qy1d$6f68e0d440c2621f8a85f261906f36d4')
+# Statik dosyaları sunma
+@app.route('/<path:filename>')
+def serve_static_files(filename):
+    if filename in ['index.html', 'login.html', 'register.html', 'profile.html', 'admin.html']:
+        return "Not Found", 404
+    return send_from_directory(app.static_folder, filename)
 
-def admin_required(f):
-    """Admin yetkisi gerektiren dekoratör."""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        admin_token = request.cookies.get('admin_token')
-        if not admin_token:
-            return redirect(url_for('admin_login', next=request.url))
+# Kullanıcı Giriş Rotası
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        user = User.query.filter_by(username=username).first()
+        
+        if user and user.check_password(password):
+            login_user(user)
+            # BAŞARILI GİRİŞTE YÖNLENDİRME
+            return redirect(url_for('index')) 
+        else:
+            # Hata varsa, login.html'i hata mesajıyla tekrar render et
+            return render_template('login.html', error='Kullanıcı adı veya şifre hatalı.')
+    
+    # GET isteği için
+    return render_template('login.html')
+
+# Kullanıcı Kayıt Rotası
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        email = request.form.get('email', '').strip()
+        password = request.form.get('password', '')
+        
+        # Geri getirilen alanlar
+        name = request.form.get('name', '').strip() 
+        surname = request.form.get('surname', '').strip() 
+        phone = request.form.get('phone', '').strip()
+
+        # Basit doğrulama 
+        if not username or not email or not password or not name or not surname:
+            return render_template('register.html', error='İsim, Soyisim, Kullanıcı Adı, E-posta ve Şifre alanları zorunludur.')
+
+        if User.query.filter_by(username=username).first():
+            return render_template('register.html', error='Bu kullanıcı adı zaten kullanılıyor.')
+
+        if User.query.filter_by(email=email).first():
+            return render_template('register.html', error='Bu e-posta adresi zaten kullanılıyor.')
+
+        new_user = User(
+            username=username,
+            email=email,
+            name=name,
+            surname=surname,
+            phone=phone,
+            is_active_member=False,
+            demo_chat_count=5
+        )
+        new_user.set_password(password)
         
         try:
-            # Token'ı doğrula
-            data = jwt.decode(admin_token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            if data.get('username') != ADMIN_USERNAME:
-                raise Exception("Yetkisiz kullanıcı.")
+            db.session.add(new_user)
+            db.session.commit()
             
-        except jwt.ExpiredSignatureError:
-            return redirect(url_for('admin_login', error="Oturum süresi doldu."))
-        except Exception:
-            return redirect(url_for('admin_login', error="Geçersiz yetkilendirme."))
+            # KAYIT BAŞARILI: Giriş sayfasına yönlendir.
+            return redirect(url_for('login')) 
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Kayıt hatası: {str(e)}")
+            return render_template('register.html', error='Veritabanına kaydederken bir hata oluştu.')
+
+    return render_template('register.html') # GET metodu için register.html'i döndürür
+
+# Çıkış Rotası
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
+# Profil Sayfası Rotası
+@app.route('/profile')
+@login_required
+def profile_page():
+    return render_template('profile.html')
+
+# API: Kullanıcı Profil Bilgilerini Çekme/Güncelleme
+@app.route('/api/profile', methods=['GET', 'POST'])
+@login_required
+def api_profile():
+    if request.method == 'GET':
+        return jsonify({
+            'username': current_user.username,
+            'email': current_user.email,
+            'name': current_user.name,
+            'surname': current_user.surname,
+            'phone': current_user.phone,
+            'is_active_member': current_user.is_active_member,
+            'demo_chat_count': current_user.demo_chat_count,
+            'grade': current_user.grade or ''
+        })
+
+    elif request.method == 'POST':
+        data = request.form if request.form else request.get_json()
+        
+        grade = data.get('grade')
+        
+        current_user.grade = grade
+        
+        try:
+            db.session.commit()
+            return jsonify({'message': 'Profil başarıyla güncellendi.'}), 200
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Profil güncelleme hatası: {str(e)}")
+            return jsonify({'error': 'Profil güncellenirken bir hata oluştu.'}), 500
+
+# Sohbet API Rotası
+@app.route('/ask', methods=['POST'])
+@login_required
+def ask():
+    if not OPENROUTER_API_KEY:
+        return jsonify({"error": "OPENROUTER_API_KEY ortam değişkeni ayarlanmamış."}), 500
+
+    if not current_user.is_active_member and current_user.demo_chat_count <= 0:
+        return jsonify({
+            "answer": "Demo hakkınız dolmuştur. Tüm özelliklere erişmek için lütfen tam üyeliğe geçin.", 
+            "error": "Demo hakkı bitti"
+        }), 402
+
+    try:
+        data = request.get_json()
+        user_message = data.get("message", "").strip()
+
+        if not user_message:
+            return jsonify({"error": "Mesaj boş olamaz."}), 400
+            
+        user_context = f"Kullanıcının sınıfı/seviyesi: {current_user.grade if current_user.grade else 'Belirtilmemiş'}."
+
+        client = openai.OpenAI(
+            api_key=OPENROUTER_API_KEY,
+            base_url="https://openrouter.ai/api/v1",
+        )
+
+        response = client.chat.completions.create(
+            model="openai/gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": f"Sen Demir'in AI öğretmenisin. Soruları yaşına ve sınıfına uygun, arkadaş canlısı ve eğitici bir dille yanıtla. Bağlam: {user_context}"},
+                {"role": "user", "content": user_message}
+            ],
+        )
+
+        answer = response.choices[0].message.content
+        
+        if not current_user.is_active_member:
+            current_user.demo_chat_count -= 1
+        
+        new_answer = Chat(user_id=current_user.id, message=user_message, response=answer)
+        db.session.add(new_answer)
+        db.session.commit()
+
+        # Ses Üretimi (Edge TTS)
+        audio_base64 = ""
+        try:
+            VOICE = "tr-TR-EmelNeural" 
+            RATE = "+3%"
+            
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_audio:
+                temp_filename = tmp_audio.name
+            
+            command = ['edge-tts', '--text', answer, '--voice', VOICE, '--rate', RATE, '--write-media', temp_filename]
+            subprocess.run(command, check=True, capture_output=True)
+            
+            with open(temp_filename, 'rb') as f:
+                audio_data = f.read()
+            
+            os.remove(temp_filename)
+            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+
+        except Exception as tts_error:
+            logging.error(f"Edge TTS HATA: Ses üretilemedi. Hata: {str(tts_error)}")
+            pass 
+
+        return jsonify({"answer": answer, "audio_base64": audio_base64}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Genel API HATA: {str(e)}")
+        return jsonify({"error": "Yapıcı bir hata oluştu. Lütfen geliştiriciye başvurun."}), 500
+
+
+# --- ADMIN FONKSİYONLARI ---
+
+# Admin girişi için statik bilgiler
+ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
+
+# Yerel ve Render için HASH'lenmiş admin şifresi (Kullanıcının güvenli HASH'i buraya yerleştirildi)
+DEFAULT_ADMIN_PASSWORD_HASH = 'pbkdf2:sha256:1000000$KetnleKDjZCas27g$da2281a11f74de96e3d30c9604adf8ea78067d9b80dc7fd19bb80b96e825cd04'
+
+# Ortam değişkeni (Render) bu değişkeni ezmezse, koddaki HASH'i kullanır.
+ADMIN_PASSWORD_HASH = os.environ.get('ADMIN_PASSWORD_HASH', DEFAULT_ADMIN_PASSWORD_HASH)
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        token = request.cookies.get('admin_token')
+        if not token:
+            return redirect(url_for('admin_login'))
+        
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            if data['username'] != ADMIN_USERNAME:
+                 return redirect(url_for('admin_login'))
+
+        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+            return redirect(url_for('admin_login'))
             
         return f(*args, **kwargs)
     return decorated_function
@@ -94,13 +313,12 @@ def admin_required(f):
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
     """Admin Giriş Sayfası"""
-    error = request.args.get('error')
+    error = None
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
 
         if username == ADMIN_USERNAME and check_password_hash(ADMIN_PASSWORD_HASH, password):
-            # 1 saat süreli admin token'ı oluştur
             token_payload = {
                 'username': ADMIN_USERNAME,
                 'exp': datetime.utcnow() + timedelta(hours=1)
@@ -108,31 +326,46 @@ def admin_login():
             token = jwt.encode(token_payload, app.config['SECRET_KEY'], algorithm='HS256')
             
             response = redirect(url_for('admin_panel'))
-            response.set_cookie('admin_token', token, httponly=True, secure=True if 'https' in request.url else False, samesite='Lax')
+            response.set_cookie('admin_token', token, max_age=3600, httponly=True) 
             return response
         else:
-            error = "Hatalı Kullanıcı Adı veya Şifre."
-            
-    return render_template('login.html', is_admin_login=True, error=error)
-
+            error = 'Kullanıcı adı veya şifre hatalı!'
+    
+    # Basit bir giriş formu döndür
+    return f"""
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head><title>Admin Girişi</title><style>
+        body {{ font-family: sans-serif; background: #0d1117; color: #e6edf3; display: flex; justify-content: center; align-items: center; height: 100vh; }}
+        .login-box {{ background: #161b22; padding: 40px; border-radius: 8px; border: 1px solid #30363d; }}
+        input {{ padding: 10px; margin-bottom: 15px; width: 100%; box-sizing: border-box; background: #30363d; border: 1px solid #58a6ff; color: #e6edf3; }}
+        button {{ padding: 10px 15px; background: #238636; color: white; border: none; border-radius: 6px; cursor: pointer; }}
+        .error {{ color: #ff7b72; margin-bottom: 15px; }}
+    </style></head>
+    <body>
+        <div class="login-box">
+            <h2>Admin Girişi</h2>
+            {f'<div class="error">{error}</div>' if error else ''}
+            <form method="POST">
+                <input type="text" name="username" placeholder="Kullanıcı Adı" required>
+                <input type="password" name="password" placeholder="Şifre" required>
+                <button type="submit">Giriş Yap</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """
 
 @app.route('/admin/panel')
 @admin_required
 def admin_panel():
-    """Admin Ana Paneli"""
-    return render_template('admin.html') # admin.html panelini döndürür
+    """Admin Ana Sayfası"""
+    return render_template('admin.html')
 
-@app.route('/admin/logout')
-def admin_logout():
-    """Admin Oturumu Kapatma"""
-    response = redirect(url_for('admin_login'))
-    response.set_cookie('admin_token', '', expires=0, httponly=True, secure=True if 'https' in request.url else False, samesite='Lax')
-    return response
-
-@app.route('/api/admin/users', methods=['GET'])
+@app.route('/api/admin/users')
 @admin_required
-def get_users():
-    """Tüm kullanıcı listesini döndürür."""
+def get_all_users():
+    """Tüm kullanıcıları JSON formatında döndürür"""
     users = User.query.all()
     user_list = []
     for user in users:
@@ -140,6 +373,9 @@ def get_users():
             'id': user.id,
             'username': user.username,
             'email': user.email,
+            'name': user.name,
+            'surname': user.surname,
+            'phone': user.phone,
             'is_active_member': user.is_active_member,
             'demo_chat_count': user.demo_chat_count,
             'date_joined': user.date_joined.strftime('%Y-%m-%d %H:%M:%S')
@@ -152,7 +388,7 @@ def toggle_membership():
     """Kullanıcının üyelik durumunu (aktif/demo) değiştirir."""
     data = request.get_json()
     username = data.get('username')
-    action = data.get('action') # 'activate' veya 'deactivate'
+    action = data.get('action')
 
     if not username or action not in ['activate', 'deactivate']:
         return jsonify({'error': 'Geçersiz veri.'}), 400
@@ -168,7 +404,7 @@ def toggle_membership():
             message = f"Kullanıcı '{username}' üyeliği başarıyla AKTİF edildi."
         else:
             user.is_active_member = False
-            user.demo_chat_count = 5 # Demo yapınca hakkı sıfırlansın
+            user.demo_chat_count = 5
             message = f"Kullanıcı '{username}' üyeliği DEMO durumuna çevrildi ve hakkı 5'e sıfırlandı."
         
         db.session.commit()
@@ -177,209 +413,9 @@ def toggle_membership():
         db.session.rollback()
         return jsonify({'error': 'Veritabanı hatası: ' + str(e)}), 500
 
-
-# --- KULLANICI GİRİŞ/KAYIT ROTLARI ---
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    error = None
-    if request.method == 'POST':
-        username = request.form.get('username')
-        email = request.form.get('email')
-        password = request.form.get('password')
-        
-        if User.query.filter_by(username=username).first():
-            error = "Bu kullanıcı adı zaten mevcut."
-        elif User.query.filter_by(email=email).first():
-            error = "Bu e-posta adresi zaten kayıtlı."
-        else:
-            try:
-                hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
-                new_user = User(username=username, email=email, password_hash=hashed_password)
-                db.session.add(new_user)
-                db.session.commit()
-                login_user(new_user)
-                return redirect(url_for('index'))
-            except Exception as e:
-                db.session.rollback()
-                error = "Kayıt sırasında bir hata oluştu: " + str(e)
-
-    return render_template('login.html', is_register=True, error=error)
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    error = None
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        
-        user = User.query.filter_by(username=username).first()
-        
-        if user and check_password_hash(user.password_hash, password):
-            login_user(user)
-            return redirect(url_for('index'))
-        else:
-            error = "Hatalı Kullanıcı Adı veya Şifre."
-            
-    return render_template('login.html', is_register=False, error=error)
-
-@app.route('/logout')
-@login_required
-def logout():
-    """Oturumu kapatır ve ana sayfaya yönlendirir."""
-    logout_user()
-    return redirect(url_for('index'))
-
-@app.route('/profile')
-@login_required
-def profile():
-    """Kullanıcının profil ve chat geçmişi sayfası."""
-    # Chat geçmişini al (son 20 mesaj)
-    chat_history = Chat.query.filter_by(user_id=current_user.id)\
-                            .order_by(Chat.timestamp.desc())\
-                            .limit(20).all()
-    # Geçmişi en eskiden en yeniye doğru sırala
-    chat_history.reverse()
-    
-    return render_template('profile.html', user=current_user, chat_history=chat_history)
-
-@app.route('/api/profile')
-@login_required
-def api_profile():
-    """JavaScript'in kullanıcı durumunu kontrol etmesi için API endpoint'i."""
-    return jsonify({
-        'is_authenticated': True,
-        'username': current_user.username,
-        'is_active_member': current_user.is_active_member,
-        'demo_chat_count': current_user.demo_chat_count,
-        'date_joined': current_user.date_joined.strftime('%Y-%m-%d')
-    })
-
-# --- ANA BOT VE SES ROTLARI ---
-
-@app.route('/')
-def index():
-    if not current_user.is_authenticated:
-        return redirect(url_for('login'))
-    return send_from_directory(app.static_folder, 'index.html')
-
-@app.route('/ask', methods=['POST'])
-@login_required
-def ask():
-    if not OPENROUTER_API_KEY:
-        return jsonify({"error": "OPENROUTER_API_KEY ortam değişkeni ayarlanmamış."}), 500
-
-    if not current_user.is_active_member and current_user.demo_chat_count <= 0:
-        return jsonify({
-            "error": "Demo hakkınız sona erdi. Tam üyelik için admin ile iletişime geçin.",
-            "code": "LIMIT_REACHED"
-        }), 403
-
-    try:
-        user_message = request.json.get('message')
-        if not user_message:
-            return jsonify({"error": "Mesaj boş olamaz."}), 400
-
-        # Veritabanına kullanıcı mesajını kaydet
-        user_chat = Chat(user_id=current_user.id, message=user_message, role='user')
-        db.session.add(user_chat)
-        db.session.commit()
-
-        # Chat geçmişini OpenAI formatına çevir
-        history = Chat.query.filter_by(user_id=current_user.id)\
-                            .order_by(Chat.timestamp.asc())\
-                            .limit(10).all() 
-
-        messages = [{"role": "system", "content": "Sen, Demir adında bir öğrenciye derslerinde yardımcı olan, sabırlı ve neşeli bir yapay zeka öğretmenisin. Cevapların kısa, net ve öğrencinin seviyesine uygun olmalıdır."}]
-        for chat in history:
-            messages.append({"role": chat.role, "content": chat.message})
-
-        # API Çağrısı
-        response = openai.chat.completions.create(
-            model="openai/gpt-3.5-turbo", # OpenRouter'daki modeli kullan
-            messages=messages,
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "HTTP-Referer": request.url 
-            }
-        )
-        bot_response = response.choices[0].message.content
-
-        # Veritabanına bot mesajını kaydet
-        bot_chat = Chat(user_id=current_user.id, message=bot_response, role='assistant')
-        db.session.add(bot_chat)
-        
-        # Demo hakkını düşür (tam üye değilse)
-        if not current_user.is_active_member:
-            current_user.demo_chat_count -= 1
-        
-        db.session.commit()
-
-        return jsonify({
-            "response": bot_response,
-            "demo_chat_count": current_user.demo_chat_count,
-            "is_active_member": current_user.is_active_member
-        })
-
-    except Exception as e:
-        db.session.rollback()
-        logging.error(f"API/Chat hatası: {str(e)}")
-        return jsonify({"error": "API çağrılırken bir hata oluştu."}), 500
-
-@app.route('/tts', methods=['POST'])
-@login_required
-def tts():
-    if not current_user.is_active_member and current_user.demo_chat_count < 0:
-         return jsonify({"error": "Demo hakkı TTS için kullanılamaz."}), 403
-
-    try:
-        text = request.json.get('text')
-        if not text:
-            return jsonify({"error": "Seslendirilecek metin boş olamaz."}), 400
-
-        # Edge-TTS komutunu oluştur
-        temp_dir = tempfile.gettempdir()
-        # Her istek için benzersiz bir dosya adı oluşturun
-        output_filename = os.path.join(temp_dir, f"tts_{os.getpid()}_{time.time()}.mp3")
-        
-        # Seçilen ses (Türkçe)
-        voice = "tr-TR-Ankara-NehirNeural" 
-        
-        # TTS komutu
-        command = [
-            'edge-tts',
-            '--text', text,
-            '--voice', voice,
-            '--rate', '+10%',
-            '--output-file', output_filename
-        ]
-
-        # Komutu çalıştırma
-        process = subprocess.run(command, check=True, capture_output=True, text=True)
-
-        if process.returncode != 0:
-             logging.error(f"Edge-TTS hatası (Stderr): {process.stderr}")
-             return jsonify({"error": "Ses sentezlenemedi."}), 500
-
-        # Oluşturulan MP3 dosyasını oku ve Base64 olarak gönder
-        with open(output_filename, 'rb') as f:
-            mp3_data = f.read()
-        
-        base64_mp3 = base64.b64encode(mp3_data).decode('utf-8')
-        
-        # Geçici dosyayı sil
-        os.remove(output_filename)
-
-        return jsonify({"audio": base64_mp3})
-
-    except subprocess.CalledProcessError as e:
-        logging.error(f"TTS Subprocess Hatası: {e.stderr}")
-        return jsonify({"error": "Ses sentezi aracı çalıştırılamadı."}), 500
-    except Exception as e:
-        logging.error(f"TTS Genel Hata: {str(e)}")
-        return jsonify({"error": "Ses sentezi sırasında beklenmeyen bir hata oluştu."}), 500
-    
+# --- Uygulama Başlatma ---
 if __name__ == '__main__':
-    # Gunicorn kullanıldığı için bu blok Render'da çalışmaz, ancak yerel test için bırakılmıştır.
-    # db.create_all() yukarıda, app context içinde garanti edildi.
+    with app.app_context():
+        db.create_all() 
+    
     app.run(debug=True, host='0.0.0.0', port=10000)
