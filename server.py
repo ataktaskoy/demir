@@ -12,7 +12,6 @@ import json
 import time 
 import jwt 
 from werkzeug.security import generate_password_hash, check_password_hash
-# EKLENEN/DÜZENLENEN İÇE AKTARMALAR
 from functools import wraps
 from datetime import datetime, timedelta 
 
@@ -21,9 +20,10 @@ from datetime import datetime, timedelta
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
 
-# Veritabanı Ayarları (SQLite kullanıyoruz)
+# 500 HATA ÇÖZÜMÜ: SQLite dosyasını Render'da yazılabilir olan /tmp klasörüne taşıyoruz.
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default_secret_key_lutfen_degistir')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///site.db') 
+# DİKKAT: Yeni veritabanı yolu
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:////tmp/site.db') 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -47,15 +47,13 @@ class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False) 
-    # Kayıt formunda istenen alanlar
     name = db.Column(db.String(100), nullable=True)     
     surname = db.Column(db.String(100), nullable=True)  
     phone = db.Column(db.String(20), nullable=True)     
-    # Diğer alanlar
     password_hash = db.Column(db.String(128), nullable=False)
     is_active_member = db.Column(db.Boolean, default=False)
     demo_chat_count = db.Column(db.Integer, default=5)
-    grade = db.Column(db.String(50), nullable=True) # Kullanıcı sınıfı/seviyesi
+    grade = db.Column(db.String(50), nullable=True) 
     date_joined = db.Column(db.DateTime, default=db.func.now())
     
     chats = db.relationship('Chat', backref='author', lazy='dynamic')
@@ -103,13 +101,10 @@ def login():
         
         if user and user.check_password(password):
             login_user(user)
-            # BAŞARILI GİRİŞTE YÖNLENDİRME
             return redirect(url_for('index')) 
         else:
-            # Hata varsa, login.html'i hata mesajıyla tekrar render et
             return render_template('login.html', error='Kullanıcı adı veya şifre hatalı.')
     
-    # GET isteği için
     return render_template('login.html')
 
 # Kullanıcı Kayıt Rotası
@@ -123,12 +118,10 @@ def register():
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
         
-        # Geri getirilen alanlar
         name = request.form.get('name', '').strip() 
         surname = request.form.get('surname', '').strip() 
         phone = request.form.get('phone', '').strip()
 
-        # Basit doğrulama 
         if not username or not email or not password or not name or not surname:
             return render_template('register.html', error='İsim, Soyisim, Kullanıcı Adı, E-posta ve Şifre alanları zorunludur.')
 
@@ -153,14 +146,15 @@ def register():
             db.session.add(new_user)
             db.session.commit()
             
-            # KAYIT BAŞARILI: Giriş sayfasına yönlendir.
+            # 404 HATASI ÇÖZÜMÜ: Başarılı kayıttan sonra yönlendirme yapılır.
             return redirect(url_for('login')) 
         except Exception as e:
             db.session.rollback()
+            # Burası, 500 hatası alındığında çalışır. Hatanın içeriğini log'lar.
             logging.error(f"Kayıt hatası: {str(e)}")
-            return render_template('register.html', error='Veritabanına kaydederken bir hata oluştu.')
+            return render_template('register.html', error='Veritabanına kaydederken beklenmedik bir hata oluştu. Lütfen daha sonra tekrar deneyin.'), 500
 
-    return render_template('register.html') # GET metodu için register.html'i döndürür
+    return render_template('register.html') 
 
 # Çıkış Rotası
 @app.route('/logout')
