@@ -4,6 +4,7 @@ const messagesDiv = document.getElementById("messages");
 const ttsToggleBtn = document.getElementById("ttsToggleBtn"); 
 const micToggleBtn = document.getElementById("micToggleBtn"); 
 const sendBtn = document.getElementById("sendBtn");
+const micStatusDiv = document.getElementById('micStatus'); // Global olarak tanımlandı
 
 // --- Ses ve Durum Kontrolü ---
 let currentAudio = null;
@@ -160,6 +161,7 @@ async function sendMessage(message) {
 
 // Mikrofon İşlemleri
 function setupSpeechRecognition() {
+    // webkitSpeechRecognition kontrolü
     if (!('webkitSpeechRecognition' in window)) {
         micToggleBtn.style.display = 'none';
         return;
@@ -169,14 +171,15 @@ function setupSpeechRecognition() {
     recognition.continuous = true; 
     recognition.interimResults = true;
     recognition.lang = 'tr-TR';
-    
-    const micStatusDiv = document.getElementById('micStatus');
 
     recognition.onstart = function() {
         recognitionActive = true;
         micToggleBtn.classList.add('active');
-        micStatusDiv.textContent = 'Dinleniyor...';
-        micStatusDiv.classList.remove('mic-status-hidden');
+        // GÜVENLİK KONTROLÜ
+        if (micStatusDiv) {
+            micStatusDiv.textContent = 'Dinleniyor... Konuşun.';
+            micStatusDiv.style.display = 'block'; 
+        }
     };
 
     recognition.onresult = function(event) {
@@ -193,7 +196,7 @@ function setupSpeechRecognition() {
         
         userInput.value = finalTranscript + interimTranscript;
         
-        if (finalTranscript) {
+        if (finalTranscript.trim()) {
             // Kesinleşmiş metin varsa sessizlik zamanlayıcısını yeniden başlat
             resetSilenceTimeout();
         }
@@ -201,13 +204,23 @@ function setupSpeechRecognition() {
 
     recognition.onerror = function(event) {
         console.error('Konuşma tanıma hatası:', event.error);
-        stopRecognition();
+        
+        // Kullanıcıya izin engellenmesi durumunda bilgi ver
+        if(event.error === 'not-allowed') {
+             alert("Mikrofon erişimi engellendi. Lütfen tarayıcı ayarlarınızdan izin verin (sadece HTTPS bağlantısında çalışır).");
+        }
+        
+        stopRecognition(false); // Hata durumunda otomatik gönderme
     };
 
     recognition.onend = function() {
         recognitionActive = false;
         micToggleBtn.classList.remove('active');
-        micStatusDiv.classList.add('mic-status-hidden');
+        // GÜVENLİK KONTROLÜ
+        if (micStatusDiv) {
+            micStatusDiv.textContent = '';
+            micStatusDiv.style.display = 'none';
+        }
     };
 }
 
@@ -221,13 +234,20 @@ function startRecognition() {
     }
 }
 
-function stopRecognition() {
-    if (!recognition) return;
-    recognition.stop();
+function stopRecognition(autoSend = true) {
+    if (!recognition || !recognitionActive) return;
+    
+    // Hata oluştuğunda stopRecognition çağrıldığında tekrar stop etmeye çalışmamak için kontrol
+    try {
+        recognition.stop();
+    } catch(e) {
+        console.warn("Recognition stop hatası: Muhtemelen zaten durdurulmuştu.");
+    }
+    
     clearTimeout(silenceTimeout);
     
-    // Eğer kesinleşmiş metin varsa otomatik gönder
-    if (finalTranscript.trim()) {
+    // Eğer kesinleşmiş metin varsa ve otomatik gönderme açıksa gönder
+    if (autoSend && finalTranscript.trim()) {
         sendMessage(finalTranscript);
     }
     finalTranscript = '';
@@ -268,12 +288,11 @@ ttsToggleBtn.addEventListener("click", () => {
 });
 
 micToggleBtn.addEventListener("click", () => {
-    if (micEnabled) {
-        if (!recognitionActive) {
-            startRecognition();
-        } else {
-            stopRecognition();
-        }
+    // Eğer konuşma tanıma aktifse kapat, değilse başlat
+    if (!recognitionActive) {
+        startRecognition();
+    } else {
+        stopRecognition();
     }
 });
 

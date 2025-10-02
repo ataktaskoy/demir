@@ -22,8 +22,15 @@ CORS(app)
 
 # 500 HATA ÇÖZÜMÜ: SQLite dosyasını Render'da yazılabilir olan /tmp klasörüne taşıyoruz.
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default_secret_key_lutfen_degistir')
-# DİKKAT: Yeni veritabanı yolu /tmp
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:////tmp/site.db') 
+
+# KRİTİK VERİTABANI DÜZELTMESİ: Render'da kalıcı veri depolaması için PostgreSQL'e geçiş.
+# Render, DATABASE_URL'yi 'postgres://' formatında sağlayabilir. SQLAlchemy için bu 'postgresql://' olmalıdır.
+database_url = os.environ.get('DATABASE_URL')
+if database_url and database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+
+# Eğer DATABASE_URL ayarlanmışsa PostgreSQL kullanılır. Aksi takdirde, yerel/geçici SQLite kullanılır.
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:////tmp/site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -72,7 +79,6 @@ class Chat(db.Model):
     timestamp = db.Column(db.DateTime, default=db.func.now())
 
 # --- KRİTİK DÜZELTME: TABLOLARIN HER ZAMAN OLUŞTURULMASINI SAĞLAMA ---
-# db.create_all()'ı if __name__ == '__main__': bloğundan çıkarıp buraya taşıyoruz.
 with app.app_context():
     db.create_all()
 # ----------------------------------------------------------------------
