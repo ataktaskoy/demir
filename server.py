@@ -23,7 +23,7 @@ CORS(app)
 # 500 HATA ÇÖZÜMÜ: SQLite dosyasını Render'da yazılabilir olan /tmp klasörüne taşıyoruz.
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default_secret_key_lutfen_degistir')
 # DİKKAT: Yeni veritabanı yolu
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:////tmp/site.db') 
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:' 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
