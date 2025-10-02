@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Paneli</title>
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 100%);
+            min-height: 100vh;
+            color: #e6edf3;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(22, 27, 34, 0.9);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            border: 1px solid #30363d;
+        }
+
+        h1 {
+            color: #58a6ff;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .navbar {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 20px;
+        }
+
+        .navbar a {
+            color: #ff7b72;
+            text-decoration: none;
+            padding: 8px 15px;
+            border: 1px solid #ff7b72;
+            border-radius: 6px;
+            transition: background-color 0.3s;
+        }
+
+        .navbar a:hover {
+            background-color: rgba(255, 123, 114, 0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #30363d;
+        }
+
+        th {
+            background-color: #161b22;
+            color: #c9d1d9;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background-color: #1f242c;
+        }
+
+        .status-active {
+            color: #3fb950; /* Yeşil */
+            font-weight: bold;
+        }
+
+        .status-demo {
+            color: #ffd700; /* Sarı */
+        }
+
+        .action-button {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .btn-activate {
+            background-color: #3fb950;
+            color: white;
+        }
+
+        .btn-deactivate {
+            background-color: #ff7b72;
+            color: white;
+        }
+
+        .btn-activate:hover {
+            background-color: #2ea043;
+        }
+
+        .btn-deactivate:hover {
+            background-color: #f85149;
+        }
+
+        .message {
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            text-align: center;
+            display: none;
+            font-weight: bold;
+        }
+
+        .message.success {
+            background-color: rgba(63, 185, 80, 0.1);
+            color: #3fb950;
+        }
+
+        .message.error {
+            background-color: rgba(255, 123, 114, 0.1);
+            color: #ff7b72;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="navbar">
+            <a href="/logout">
+                <i class="fas fa-sign-out-alt"></i> Güvenli Çıkış
+            </a>
+        </div>
+        
+        <h1>Yönetici Paneli - Kullanıcılar</h1>
+
+        <div id="statusMessage" class="message"></div>
+        
+        <table id="userTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Kullanıcı Adı</th>
+                    <th>E-posta</th>
+                    <th>Durum</th>
+                    <th>Demo Hakkı</th>
+                    <th>Kayıt Tarihi</th>
+                    <th>Eylem</th>
+                </tr>
+            </thead>
+            <tbody>
+                </tbody>
+        </table>
+    </div>
+
+    <script>
+        const userTableBody = document.querySelector('#userTable tbody');
+        const statusMessageDiv = document.getElementById('statusMessage');
+
+        function showMessage(type, text) {
+            statusMessageDiv.className = `message ${type}`;
+            statusMessageDiv.textContent = text;
+            statusMessageDiv.style.display = 'block';
+            setTimeout(() => {
+                statusMessageDiv.style.display = 'none';
+            }, 4000);
+        }
+
+        async function fetchUsers() {
+            try {
+                const response = await fetch('/api/admin/users');
+                if (!response.ok) {
+                    throw new Error('Kullanıcı listesi yüklenemedi.');
+                }
+                const data = await response.json();
+                renderUserTable(data.users);
+            } catch (error) {
+                console.error('Hata:', error);
+                showMessage('error', 'Kullanıcı listesini çekerken bir sorun oluştu.');
+            }
+        }
+
+        function renderUserTable(users) {
+            userTableBody.innerHTML = ''; // Tabloyu temizle
+
+            users.forEach(user => {
+                const row = userTableBody.insertRow();
+                
+                const statusClass = user.is_active_member ? 'status-active' : 'status-demo';
+                const statusText = user.is_active_member ? 'AKTİF ÜYE' : 'DEMO';
+                const actionBtn = user.is_active_member 
+                    ? `<button class="action-button btn-deactivate" data-username="${user.username}" data-action="deactivate">Demo Yap</button>`
+                    : `<button class="action-button btn-activate" data-username="${user.username}" data-action="activate">Aktif Et</button>`;
+
+                row.innerHTML = `
+                    <td>${user.id}</td>
+                    <td>${user.username}</td>
+                    <td>${user.email}</td>
+                    <td class="${statusClass}">${statusText}</td>
+                    <td>${user.demo_chat_count}</td>
+                    <td>${new Date(user.date_joined).toLocaleString('tr-TR')}</td>
+                    <td>${actionBtn}</td>
+                `;
+            });
+            
+            // Butonlara event listener ekle
+            document.querySelectorAll('.action-button').forEach(button => {
+                button.addEventListener('click', handleToggle);
+            });
+        }
+
+        async function handleToggle(e) {
+            const button = e.target;
+            const username = button.dataset.username;
+            const action = button.dataset.action;
+            
+            if (!confirm(`Kullanıcı ${username}'in üyeliğini ${action === 'activate' ? 'AKTİF' : 'DEMO'} duruma geçirmek istediğinizden emin misiniz?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/toggle', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, action })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage('success', data.message);
+                    fetchUsers(); // Başarılıysa tabloyu yeniden yükle
+                } else {
+                    showMessage('error', data.error || 'İşlem başarısız oldu.');
+                }
+            } catch (error) {
+                showMessage('error', 'Sunucuya bağlanırken bir hata oluştu.');
+                console.error('Toggle Hata:', error);
+            }
+        }
+
+        // Sayfa yüklendiğinde kullanıcı listesini çek
+        document.addEventListener('DOMContentLoaded', fetchUsers);
+    </script>
+</body>
+</html>

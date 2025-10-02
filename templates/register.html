@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kayıt Ol - AI Öğretmen</title>
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #e6edf3;
+            padding: 20px;
+        }
+
+        .register-container {
+            background: rgba(22, 27, 34, 0.9);
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            width: 100%;
+            max-width: 500px;
+            border: 1px solid #30363d;
+        }
+
+        .register-container h2 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #58a6ff;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+            color: #c9d1d9;
+        }
+
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+            background-color: #161b22;
+            color: #e6edf3;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        
+        /* Select için özel renk düzeltmesi */
+        .input-group select {
+            appearance: none; /* Varsayılan stilini kaldır */
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="%23c9d1d9" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/></svg>');
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 0.65em auto;
+        }
+
+        .input-group input:focus, .input-group select:focus {
+            outline: none;
+            border-color: #58a6ff;
+        }
+
+        .btn-register {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            background-color: #238636;
+            color: white;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .btn-register:hover {
+            background-color: #2ea043;
+        }
+
+        #errorMessage, #successMessage {
+            text-align: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        #errorMessage {
+            color: #ff7b72;
+            background: rgba(255, 123, 114, 0.1);
+        }
+        
+        #successMessage {
+            color: #3fb950;
+            background: rgba(63, 185, 80, 0.1);
+        }
+
+        .login-link {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.9em;
+        }
+
+        .login-link a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="register-container">
+        <h2>Kayıt Ol</h2>
+
+        <div id="errorMessage"></div>
+        <div id="successMessage"></div>
+
+        <form id="registerForm" method="POST" action="">
+            <div class="input-group">
+                <label for="full_name">Adınız Soyadınız</label>
+                <input type="text" id="full_name" name="full_name" required>
+            </div>
+
+            <div class="input-group">
+                <label for="username">Kullanıcı Adı</label>
+                <input type="text" id="username" name="username" required autocomplete="username">
+            </div>
+            
+            <div class="input-group">
+                <label for="email">E-posta</label>
+                <input type="email" id="email" name="email" required autocomplete="email">
+            </div>
+            
+            <div class="input-group">
+                <label for="gender">Cinsiyet</label>
+                <select id="gender" name="gender" required>
+                    <option value="" disabled selected>Lütfen seçiniz</option>
+                    <option value="Erkek">Erkek</option>
+                    <option value="Kadin">Kadın</option>
+                    <option value="Belirtmek Istemiyorum">Belirtmek İstemiyorum</option>
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label for="dob">Doğum Tarihi</label>
+                <input type="date" id="dob" name="dob" required>
+            </div>
+            
+            <div class="input-group">
+                <label for="grade">Kaçıncı Sınıf</label>
+                <input type="text" id="grade" name="grade" placeholder="Örn: 5. Sınıf veya Lise 1" required>
+            </div>
+            <div class="input-group">
+                <label for="password">Şifre</label>
+                <input type="password" id="password" name="password" required autocomplete="new-password">
+            </div>
+
+            <button type="submit" class="btn-register">Kayıt Ol</button>
+        </form>
+
+        <div class="login-link">
+            Zaten bir hesabınız var mı? <a href="/login">Giriş Yap</a>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const errorDiv = document.getElementById('errorMessage');
+            const successDiv = document.getElementById('successMessage');
+            errorDiv.style.display = 'none';
+            successDiv.style.display = 'none';
+
+            const formData = new FormData(e.target);
+            
+            // Tüm alanların boş olup olmadığını tekrar kontrol et (sadece JS tarafında ekstra kontrol)
+            let allFilled = true;
+            for (const value of formData.values()) {
+                if (value.trim() === "") {
+                    allFilled = false;
+                    break;
+                }
+            }
+
+            if (!allFilled) {
+                errorDiv.textContent = 'Lütfen tüm zorunlu alanları doldurun.';
+                errorDiv.style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    successDiv.textContent = 'Kayıt başarılı! Giriş sayfasına yönlendiriliyorsunuz...';
+                    successDiv.style.display = 'block';
+                    setTimeout(() => {
+                        window.location.href = '/login';
+                    }, 2000);
+                } else {
+                    errorDiv.textContent = data.error || 'Kayıt sırasında bir hata oluştu.';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Bir hata oluştu. Lütfen tekrar deneyin.';
+                errorDiv.style.display = 'block';
+                console.error(error);
+            }
+        });
+    </script>
+</body>
+</html>

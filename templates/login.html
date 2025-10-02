@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Giriş Yap - AI Öğretmen</title>
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #e6edf3;
+            padding: 20px;
+        }
+
+        .login-container {
+            background: rgba(22, 27, 34, 0.9);
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid #30363d;
+        }
+
+        .login-container h2 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #58a6ff;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+            color: #c9d1d9;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+            background-color: #161b22;
+            color: #e6edf3;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #58a6ff;
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            background-color: #58a6ff;
+            color: white;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .btn-login:hover {
+            background-color: #79b8ff;
+        }
+
+        #errorMessage {
+            text-align: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 6px;
+            color: #ff7b72;
+            background: rgba(255, 123, 114, 0.1);
+        }
+        
+        .register-link {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.9em;
+        }
+
+        .register-link a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h2>{% if admin_mode %}Admin Girişi{% else %}Giriş Yap{% endif %}</h2>
+
+        {% if error %}
+            <div id="errorMessage">{{ error }}</div>
+        {% endif %}
+
+        <form id="loginForm" method="POST" action="">
+            <div class="input-group">
+                <label for="username">Kullanıcı Adı</label>
+                <input type="text" id="username" name="username" required autocomplete="username">
+            </div>
+
+            <div class="input-group">
+                <label for="password">Şifre</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+
+            <button type="submit" class="btn-login">Giriş Yap</button>
+        </form>
+
+        {% if not admin_mode %}
+        <div class="register-link">
+            Hesabınız yok mu? <a href="/register">Hemen Kayıt Ol</a>
+        </div>
+        {% endif %}
+    </div>
+    
+    <script>
+        // Formun /admin veya /login adresine gönderilmesini sağlar
+        document.getElementById('loginForm').action = window.location.pathname;
+    </script>
+</body>
+</html>

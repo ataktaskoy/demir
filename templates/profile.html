@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profil Ayarları</title>
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #e6edf3;
+            padding: 20px;
+        }
+
+        .profile-container {
+            background: rgba(22, 27, 34, 0.9);
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            width: 100%;
+            max-width: 500px;
+            border: 1px solid #30363d;
+        }
+
+        .profile-container h2 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #58a6ff;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+            color: #c9d1d9;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+            background-color: #161b22;
+            color: #e6edf3;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #58a6ff;
+        }
+
+        .btn-save {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            background-color: #58a6ff;
+            color: white;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .btn-save:hover {
+            background-color: #79b8ff;
+        }
+
+        .message {
+            text-align: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 6px;
+            display: none;
+        }
+        
+        .message.success {
+            color: #3fb950;
+            background: rgba(63, 185, 80, 0.1);
+        }
+
+        .status-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 0.9em;
+        }
+
+        .status-info p {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .status-active { color: #3fb950; font-weight: bold; }
+        .status-demo { color: #ffd700; }
+        .back-link { display: block; text-align: center; margin-top: 20px; }
+        .back-link a { color: #58a6ff; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="profile-container">
+        <h2><i class="fas fa-user-circle"></i> Profil Ayarları</h2>
+
+        <div id="statusInfo" class="status-info">
+            <p>Kullanıcı Adı: <span id="profileUsername"></span></p>
+            <p>E-posta: <span id="profileEmail"></span></p>
+            <p>Üyelik Durumu: <span id="profileStatus"></span></p>
+        </div>
+
+        <div id="statusMessage" class="message"></div>
+
+        <form id="profileForm" method="POST" action="">
+            <div class="input-group">
+                <label for="grade">Sınıfınız (Yapay Zeka İçin)</label>
+                <input type="text" id="grade" name="grade" placeholder="Örn: 5. Sınıf, Lise 1 veya Yetişkin">
+            </div>
+
+            <button type="submit" class="btn-save"><i class="fas fa-save"></i> Kaydet</button>
+        </form>
+
+        <div class="back-link">
+            <a href="/"><i class="fas fa-arrow-left"></i> Sohbet Ekranına Geri Dön</a>
+        </div>
+    </div>
+
+    <script>
+        const profileUsername = document.getElementById('profileUsername');
+        const profileEmail = document.getElementById('profileEmail');
+        const profileStatus = document.getElementById('profileStatus');
+        const gradeInput = document.getElementById('grade');
+        const statusMessageDiv = document.getElementById('statusMessage');
+        const profileForm = document.getElementById('profileForm');
+
+        function showMessage(type, text) {
+            statusMessageDiv.className = `message ${type}`;
+            statusMessageDiv.textContent = text;
+            statusMessageDiv.style.display = 'block';
+            setTimeout(() => {
+                statusMessageDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        async function fetchProfileData() {
+            try {
+                const response = await fetch('/api/profile');
+                if (!response.ok) throw new Error('Profil yüklenemedi.');
+                
+                const data = await response.json();
+                
+                profileUsername.textContent = data.username;
+                profileEmail.textContent = data.email;
+                gradeInput.value = data.grade || '';
+
+                if (data.is_active_member) {
+                    profileStatus.textContent = 'Aktif Üye';
+                    profileStatus.className = 'status-active';
+                } else {
+                    profileStatus.textContent = `Demo Üye (Kalan Hak: ${data.demo_chat_count})`;
+                    profileStatus.className = 'status-demo';
+                }
+
+            } catch (error) {
+                console.error('Hata:', error);
+                showMessage('error', 'Profil bilgileri yüklenirken bir hata oluştu.');
+            }
+        }
+
+        profileForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(profileForm);
+            
+            try {
+                const response = await fetch('/api/profile', {
+                    method: 'POST',
+                    body: formData 
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage('success', data.message);
+                    fetchProfileData(); // Verileri yeniden çek ve statüyü güncelle
+                } else {
+                    showMessage('error', data.error || 'Kaydederken bir hata oluştu.');
+                }
+            } catch (error) {
+                showMessage('error', 'Sunucuya bağlanırken bir hata oluştu.');
+                console.error(error);
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', fetchProfileData);
+    </script>
+</body>
+</html>

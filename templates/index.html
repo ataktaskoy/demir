@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Demir'in AI Öğretmeni</title>
+    <title>AI Ödev Öğretmeni</title>
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -12,9 +12,19 @@
 <body>
     <canvas id="bgCanvas"></canvas>
     <div id="bot-container">
-        <h2>Demir'in AI Öğretmeni</h2>
-        <p>Merhaba Demir, derslerinde sana nasıl yardımcı olabilirim?</p>
+        <h2>AI Ödev Öğretmeni</h2>
+
+        <div id="status-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px;">
+            <span id="memberStatus" style="font-weight: bold; color: #c9d1d9;">Durum Yükleniyor...</span>
+            <a href="/profile" style="color:#58a6ff; text-decoration: none; font-size: 0.9em; padding: 5px 10px; border: 1px solid #58a6ff; border-radius: 4px;">
+                <i class="fas fa-user-circle"></i> Profil
+            </a>
+        </div>
+        
+        <p>Merhaba, derslerinde sana nasıl yardımcı olabilirim?</p>
+        
         <div id="messages"></div>
+
         <div class="input-container">
             <input type="text" id="userInput" placeholder="Dinliyorum...">
             <div class="control-buttons">
@@ -24,9 +34,14 @@
                 <button id="micToggleBtn" class="control-button active" title="Mikrofonu aç/kapat">
                     <i class="fas fa-microphone"></i>
                 </button>
+                <button id="sendBtn" class="control-button" title="Gönder">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
             </div>
         </div>
+        <div id="micStatus" class="mic-status-hidden"></div>
     </div>
+    
     <script src="script_v2.js"></script>
 </body>
 </html>

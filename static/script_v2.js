@@ -3,6 +3,7 @@ const userInput = document.getElementById("userInput");
 const messagesDiv = document.getElementById("messages");
 const ttsToggleBtn = document.getElementById("ttsToggleBtn"); 
 const micToggleBtn = document.getElementById("micToggleBtn"); 
+const sendBtn = document.getElementById("sendBtn");
 
 // --- Ses ve Durum Kontrolü ---
 let currentAudio = null;
@@ -10,7 +11,7 @@ let isSpeaking = false;
 let recognition = null; 
 let isBotProcessing = false; 
 let finalTranscript = '';     // Kesinleşmiş (Final) metinleri tutar
-let interimTranscript = '';   // YENİ: Kesinleşmemiş (Interim) metinleri tutar
+let interimTranscript = '';   // Kesinleşmemiş (Interim) metinleri tutar
 let ttsEnabled = true;        
 let micEnabled = true;        
 let recognitionActive = false;
@@ -19,6 +20,32 @@ let silenceTimeout = null;
 // --- AYARLAR ---
 const API_URL = "/ask"; 
 const SILENCE_THRESHOLD_MS = 1500; // 1.5 saniye sessizlik sonrası otomatik gönder
+
+// --- YENİ EKLENEN FONKSİYON: Kullanıcı Durumunu Yükleme ---
+async function updateStatusDisplay() {
+    try {
+        const response = await fetch('/api/profile');
+        if (response.ok) {
+            const data = await response.json();
+            const statusDiv = document.getElementById('memberStatus');
+            
+            if (data.is_active_member) {
+                // Ücretli üye ise
+                statusDiv.innerHTML = 'Aktif Üye <i class="fas fa-check-circle" style="color: #238636;"></i>';
+            } else {
+                // Demo kullanıcısı ise
+                statusDiv.innerHTML = `Demo Hakkınız: <strong>${data.demo_chat_count}</strong> kalan mesaj <i class="fas fa-comment"></i>`;
+                
+                if (data.demo_chat_count <= 0) {
+                     statusDiv.innerHTML = 'Demo Hakkı Bitti! <i class="fas fa-exclamation-triangle" style="color: #ff7b72;"></i>';
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Durum yüklenirken hata:', error);
+    }
+}
+// --- YENİ EKLENEN FONKSİYON BİTİŞ ---
 
 // --- Mesajları Ekrana Ekleme ---
 function appendMessage(text, sender) {
@@ -33,296 +60,224 @@ function appendMessage(text, sender) {
 function resetUI() {
     isBotProcessing = false;
     setUIEnabled(true);
-    userInput.style.backgroundColor = '#161b22'; 
-    if (micEnabled) { 
-        setTimeout(startListening, 500); 
-    }
+    userInput.style.backgroundColor = '#161b22';
+    micToggleBtn.disabled = false;
+    sendBtn.disabled = false;
 }
 
+// UI elementlerinin etkinliğini kontrol eder
+function setUIEnabled(enabled) {
+    userInput.disabled = !enabled;
+    micToggleBtn.disabled = !enabled;
+    sendBtn.disabled = !enabled;
+    ttsToggleBtn.disabled = !enabled;
+}
 
-// --- Sesli Okuma Fonksiyonu (TTS) ---
-function playAudioFromBase64(base64Data) {
+// Ses dosyasını oynatır
+function playAudio(base64Data) {
     if (!ttsEnabled) {
-        resetUI();
         return;
     }
     
     if (currentAudio) {
         currentAudio.pause();
-        currentAudio = null;
     }
-    
-    const audioUrl = `data:audio/mpeg;base64,${base64Data}`;
-    currentAudio = new Audio(audioUrl);
-    
-    currentAudio.onplay = () => {
-        isSpeaking = true;
-    };
-    
-    currentAudio.onended = () => {
-        isSpeaking = false;
-        resetUI(); 
-    };
 
-    currentAudio.onerror = () => {
-        isSpeaking = false;
-        console.error("Ses oynatma hatası.");
-        resetUI();
-    };
+    const audio = new Audio("data:audio/mp3;base64," + base64Data);
+    currentAudio = audio;
+    isSpeaking = true;
 
-    currentAudio.play().catch(e => {
-        console.error("Ses oynatma hatası (Auto-play engellendi?).", e);
-        resetUI();
+    audio.onended = () => {
+        isSpeaking = false;
+    };
+    audio.play().catch(error => {
+        console.error("Ses oynatılırken hata:", error);
+        isSpeaking = false;
     });
 }
 
-// UI Butonlarını kilitleme/açma fonksiyonu
-function setUIEnabled(enabled) {
-    userInput.disabled = !enabled;
-    
-    if (enabled) {
-        userInput.placeholder = "Dinliyorum...";
-    } else {
-        userInput.placeholder = "Bot cevaplıyor, lütfen bekleyin...";
-    }
-}
-
-
-// --- API İsteği Gönderme ---
+// API'ye mesaj gönderir
 async function sendMessage(message) {
-    if (silenceTimeout) {
-        clearTimeout(silenceTimeout);
-        silenceTimeout = null;
-    }
-    
-    if (isBotProcessing || message.trim() === "") {
-        if (message.trim() === "") resetUI(); 
+    if (isBotProcessing || !message.trim()) {
         return;
     }
-    
+
     isBotProcessing = true;
     setUIEnabled(false);
-    stopListening(false); 
-
     
     appendMessage(message, "user");
-    userInput.value = "";
+    userInput.value = ""; 
+    
+    // Yükleniyor mesajı göster
+    appendMessage("...", "assistant loading"); 
     
     try {
         const response = await fetch(API_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+            },
             body: JSON.stringify({ message: message })
         });
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`API Hatası: ${errorData.error || response.statusText}`);
+        // Yükleniyor mesajını kaldır
+        const loadingMessage = messagesDiv.querySelector('.assistant.loading');
+        if (loadingMessage) {
+            messagesDiv.removeChild(loadingMessage);
         }
 
         const data = await response.json();
-        const botText = data.answer;
-        
-        appendMessage(botText, "bot");
-        
-        if (data.audio_base64 && ttsEnabled) {
-            playAudioFromBase64(data.audio_base64);
+
+        if (response.ok) {
+            appendMessage(data.answer, "assistant");
+            if (data.audio_base64) {
+                playAudio(data.audio_base64);
+            }
+        } else if (response.status === 402) {
+            // Demo hakkı bittiğinde 402 döner
+            appendMessage(data.answer, "assistant error");
         } else {
-            resetUI();
+            // Diğer hatalar (API hatası dahil)
+            appendMessage(data.error || "Bilinmeyen bir hata oluştu.", "assistant error");
         }
+        
+        // İşlem bittiğinde demo sayacını güncelle (hata olsa da olmasa da güncellenmeli)
+        updateStatusDisplay();
 
     } catch (error) {
-        console.error('İstek hatası:', error);
-        appendMessage(`Hata oluştu: ${error.message}`, "bot");
+        console.error("Mesaj gönderme hatası:", error);
+        
+        // Yükleniyor mesajını kaldır
+        const loadingMessage = messagesDiv.querySelector('.assistant.loading');
+        if (loadingMessage) {
+            messagesDiv.removeChild(loadingMessage);
+        }
+        appendMessage("Hata oluştu: Sunucuya ulaşılamadı. Lütfen tekrar deneyin.", "assistant error");
+    } finally {
         resetUI();
     }
 }
 
-// --- Kontrol Butonu Olayları ---
-
-// TTS Aç/Kapat
-ttsToggleBtn.addEventListener('click', () => {
-    ttsEnabled = !ttsEnabled;
-    ttsToggleBtn.innerHTML = ttsEnabled ? '<i class="fas fa-volume-up"></i>' : '<i class="fas fa-volume-mute"></i>';
-    ttsToggleBtn.classList.toggle('active', ttsEnabled); 
-    
-    if (!ttsEnabled && isSpeaking && currentAudio) {
-        currentAudio.pause();
-        currentAudio = null;
-        isSpeaking = false;
-        resetUI(); 
-    }
-});
-
-// Mikrofon Aç/Kapat
-micToggleBtn.addEventListener('click', () => {
-    micEnabled = !micEnabled;
-    micToggleBtn.innerHTML = micEnabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
-    micToggleBtn.classList.toggle('active', micEnabled);
-
-    if (micEnabled) {
-        startListening();
-    } else {
-        stopListening();
-    }
-});
-
-
-// ===============================================
-// SÜREKLİ DİNLEME ve OTOMATİK GÖNDERİM MANTIĞI
-// ===============================================
-
-function initRecognition() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-        console.error("Tarayıcınız Konuşma Tanımayı desteklemiyor.");
-        micToggleBtn.style.display = 'none'; 
+// Mikrofon İşlemleri
+function setupSpeechRecognition() {
+    if (!('webkitSpeechRecognition' in window)) {
+        micToggleBtn.style.display = 'none';
         return;
     }
 
-    recognition = new SpeechRecognition();
+    recognition = new webkitSpeechRecognition();
+    recognition.continuous = true; 
+    recognition.interimResults = true;
     recognition.lang = 'tr-TR';
-    recognition.interimResults = true;  
-    recognition.continuous = true;      
-
-    // --- Olay Dinleyicileri ---
     
-    recognition.onstart = () => { 
+    const micStatusDiv = document.getElementById('micStatus');
+
+    recognition.onstart = function() {
         recognitionActive = true;
-        userInput.style.backgroundColor = '#2c4a3d'; // Yeşil renk
+        micToggleBtn.classList.add('active');
+        micStatusDiv.textContent = 'Dinleniyor...';
+        micStatusDiv.classList.remove('mic-status-hidden');
     };
 
-    recognition.onresult = (event) => {
-        // Yeni dinleme döngüsünde metinleri sıfırla
-        let newInterimTranscript = '';
-        let newFinalTranscript = '';
-        
-        // KRİTİK: Sessizlik zamanlayıcısını her yeni ses geldiğinde sıfırla
-        if (silenceTimeout) {
-            clearTimeout(silenceTimeout);
-        }
-        
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-                newFinalTranscript += transcript;
-            } else {
-                newInterimTranscript += transcript;
-            }
-        }
-        
-        // Global değişkenleri güncelle
-        finalTranscript += newFinalTranscript; // Kesinleşmiş metni biriktir
-        interimTranscript = newInterimTranscript; // Anlık metni göster
-
-        // ANLIK GERİ BİLDİRİM: Konuşuldukça metni göster (birikmiş final + anlık interim)
-        // Düzeltme: Sadece anlık metni göstermek daha doğru ve stabil
-        userInput.value = interimTranscript; 
-        
-        // KRİTİK: Konuşma metni varsa, otomatik durdurma zamanlayıcısını başlat
-        // Kontrol: Eğer konuşma tanıma bir metin üretiyorsa (interim veya final)
-        if (interimTranscript.length > 0 || newFinalTranscript.length > 0) {
-            silenceTimeout = setTimeout(() => {
-                // Sessizlik eşiği aşıldı, otomatik olarak dinlemeyi durdur
-                stopListening(); 
-            }, SILENCE_THRESHOLD_MS);
-        }
-
-        // BOTU KESME MANTIĞI
-        if ((interimTranscript.length > 0 || newFinalTranscript.length > 0) && isSpeaking && currentAudio) {
-            currentAudio.pause();
-            currentAudio = null;
-            isSpeaking = false;
-            stopListening(); // Bot kesildiğinde hemen durdur, zamanlayıcı gönderecek
-        }
-    };
-
-    recognition.onend = () => { 
-        recognitionActive = false;
-        userInput.style.backgroundColor = '#161b22'; 
-        
-        if (silenceTimeout) {
-            clearTimeout(silenceTimeout);
-            silenceTimeout = null;
-        }
-        
-        // KRİTİK DÜZELTME: GÖNDERİLECEK METİN
-        // Final metin (kesinleşmiş) VEYA interim (o an inputta kalan metin) varsa GÖNDER.
-        const textToSend = (finalTranscript.trim() + " " + userInput.value.trim()).trim();
-        
-        // Gönderim yapıldıktan sonra tüm metinleri sıfırla
-        finalTranscript = ''; 
+    recognition.onresult = function(event) {
+        finalTranscript = '';
         interimTranscript = '';
         
-        if (textToSend) {
-            userInput.value = ''; 
-            sendMessage(textToSend);
-            
-        } else {
-            if (!isBotProcessing && micEnabled) {
-                 startListening(); 
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+            } else {
+                interimTranscript += event.results[i][0].transcript;
             }
         }
-    };
-
-    recognition.onerror = (event) => {
-        console.error('Konuşma Tanıma Hatası:', event.error);
-        recognitionActive = false; 
-        userInput.style.backgroundColor = '#161b22'; 
         
-        if (!isBotProcessing && micEnabled) {
-             if (event.error !== 'not-allowed') { 
-                startListening(); 
-             } else {
-                 console.error("Mikrofon izni reddedildi.");
-                 micEnabled = false; 
-                 micToggleBtn.innerHTML = '<i class="fas fa-microphone-slash"></i>';
-                 micToggleBtn.classList.remove('active');
-                 userInput.placeholder = "Mikrofon izni gerekli.";
-             }
+        userInput.value = finalTranscript + interimTranscript;
+        
+        if (finalTranscript) {
+            // Kesinleşmiş metin varsa sessizlik zamanlayıcısını yeniden başlat
+            resetSilenceTimeout();
         }
     };
-    
-    if (micEnabled) {
-        startListening();
-    }
+
+    recognition.onerror = function(event) {
+        console.error('Konuşma tanıma hatası:', event.error);
+        stopRecognition();
+    };
+
+    recognition.onend = function() {
+        recognitionActive = false;
+        micToggleBtn.classList.remove('active');
+        micStatusDiv.classList.add('mic-status-hidden');
+    };
 }
 
-// Dinlemeyi başlatan fonksiyon
-function startListening() {
-    if (!recognition || isBotProcessing || recognitionActive || !micEnabled) return;
+function startRecognition() {
+    if (!recognition) return;
     try {
         recognition.start();
-    } catch (e) {
-        if (e.name !== 'InvalidStateError') {
-             console.error("Dinleme başlatma hatası:", e);
+        resetSilenceTimeout();
+    } catch (error) {
+        console.error("Tanıma başlatılamadı:", error);
+    }
+}
+
+function stopRecognition() {
+    if (!recognition) return;
+    recognition.stop();
+    clearTimeout(silenceTimeout);
+    
+    // Eğer kesinleşmiş metin varsa otomatik gönder
+    if (finalTranscript.trim()) {
+        sendMessage(finalTranscript);
+    }
+    finalTranscript = '';
+    userInput.value = '';
+}
+
+function resetSilenceTimeout() {
+    clearTimeout(silenceTimeout);
+    silenceTimeout = setTimeout(() => {
+        if (recognitionActive) {
+            console.log("Sessizlik tespit edildi, otomatik durduruluyor.");
+            stopRecognition();
+        }
+    }, SILENCE_THRESHOLD_MS);
+}
+
+
+// --- Olay Dinleyicileri ---
+userInput.addEventListener("keypress", (e) => {
+    if (e.key === 'Enter') {
+        sendMessage(userInput.value);
+    }
+});
+
+sendBtn.addEventListener("click", () => {
+    sendMessage(userInput.value);
+});
+
+ttsToggleBtn.addEventListener("click", () => {
+    ttsEnabled = !ttsEnabled;
+    ttsToggleBtn.classList.toggle('active', ttsEnabled);
+    ttsToggleBtn.title = ttsEnabled ? "Botun sesli cevap verme özelliğini kapat" : "Botun sesli cevap verme özelliğini aç";
+
+    if (!ttsEnabled && currentAudio) {
+        currentAudio.pause();
+        isSpeaking = false;
+    }
+});
+
+micToggleBtn.addEventListener("click", () => {
+    if (micEnabled) {
+        if (!recognitionActive) {
+            startRecognition();
+        } else {
+            stopRecognition();
         }
     }
-}
+});
 
-// Dinlemeyi durduran fonksiyon
-function stopListening(changeColor = true) {
-    if (recognition && recognitionActive) { 
-        recognition.stop();
-    }
-}
-
-
-// --- Sayfa Yüklendiğinde ---
-window.onload = () => {
-    initRecognition();
-    initThreeJS();
-    
-    // Butonların başlangıç durumlarını ayarla
-    ttsToggleBtn.classList.add('active'); 
-    micToggleBtn.classList.add('active'); 
-};
-
-// ===============================================
-// THREE.JS GÖRSELLEŞTİRME KODU (DEĞİŞMEDİ)
-// ===============================================
-
+// --- Three.js Arka Plan Animasyonu ---
 let scene, camera, renderer, sphere;
 let frameCount = 0;
 
@@ -370,15 +325,25 @@ function animate() {
 
     if (isSpeaking) {
         frameCount += 0.2;
-        audioEffect = (Math.random() * 0.1) + Math.sin(frameCount) * 0.15;
+        // Konuşma sırasında hafif titreşim efekti
+        audioEffect = Math.sin(frameCount) * 0.1 + 0.1;
     } else {
-        frameCount = 0;
+        frameCount = 0; 
     }
 
     sphere.rotation.x += 0.005;
-    sphere.rotation.y += 0.005;
+    sphere.rotation.y += 0.008;
 
-    sphere.scale.set(baseScale + audioEffect, baseScale + audioEffect, baseScale + audioEffect);
+    // Boyut animasyonu
+    let scale = baseScale + (Math.sin(Date.now() * 0.001) * 0.1) + audioEffect;
+    sphere.scale.set(scale, scale, scale);
 
     renderer.render(scene, camera);
+}
+
+// --- Uygulama Başlangıcı ---
+window.onload = function() {
+    updateStatusDisplay(); 
+    setupSpeechRecognition();
+    initThreeJS();
 }
