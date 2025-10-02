@@ -57,7 +57,10 @@ class User(db.Model, UserMixin):
     name = db.Column(db.String(100), nullable=True)     
     surname = db.Column(db.String(100), nullable=True)  
     phone = db.Column(db.String(20), nullable=True)     
-    password_hash = db.Column(db.String(128), nullable=False)
+    
+    # DÜZELTME: password_hash alanı 128'den 512'ye çıkarıldı.
+    password_hash = db.Column(db.String(512), nullable=False) 
+    
     is_active_member = db.Column(db.Boolean, default=False)
     demo_chat_count = db.Column(db.Integer, default=5)
     grade = db.Column(db.String(50), nullable=True) 
