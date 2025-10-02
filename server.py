@@ -22,8 +22,8 @@ CORS(app)
 
 # 500 HATA ÇÖZÜMÜ: SQLite dosyasını Render'da yazılabilir olan /tmp klasörüne taşıyoruz.
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default_secret_key_lutfen_degistir')
-# DİKKAT: Yeni veritabanı yolu
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:' 
+# DİKKAT: Yeni veritabanı yolu /tmp
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:////tmp/site.db') 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -70,6 +70,12 @@ class Chat(db.Model):
     message = db.Column(db.Text, nullable=False)
     response = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, default=db.func.now())
+
+# --- KRİTİK DÜZELTME: TABLOLARIN HER ZAMAN OLUŞTURULMASINI SAĞLAMA ---
+# db.create_all()'ı if __name__ == '__main__': bloğundan çıkarıp buraya taşıyoruz.
+with app.app_context():
+    db.create_all()
+# ----------------------------------------------------------------------
 
 
 # --- Rotalar ---
@@ -146,11 +152,10 @@ def register():
             db.session.add(new_user)
             db.session.commit()
             
-            # 404 HATASI ÇÖZÜMÜ: Başarılı kayıttan sonra yönlendirme yapılır.
+            # Kayıt başarılı olduğunda Giriş sayfasına yönlendirme
             return redirect(url_for('login')) 
         except Exception as e:
             db.session.rollback()
-            # Burası, 500 hatası alındığında çalışır. Hatanın içeriğini log'lar.
             logging.error(f"Kayıt hatası: {str(e)}")
             return render_template('register.html', error='Veritabanına kaydederken beklenmedik bir hata oluştu. Lütfen daha sonra tekrar deneyin.'), 500
 
@@ -409,7 +414,5 @@ def toggle_membership():
 
 # --- Uygulama Başlatma ---
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all() 
-    
+    # db.create_all() artık yukarıda çalıştırıldığı için bu kısım temizlendi.
     app.run(debug=True, host='0.0.0.0', port=10000)
