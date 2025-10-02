@@ -7,3 +7,4 @@ Flask-Login
 gunicorn
 gevent
 werkzeug
+PyJWT
