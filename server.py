@@ -235,7 +235,7 @@ def ask():
         response = client.chat.completions.create(
             model="openai/gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": f"Sen Demir'in AI öğretmenisin. Soruları yaşına ve sınıfına uygun, arkadaş canlısı ve eğitici bir dille yanıtla. Bağlam: {user_context}"},
+                {"role": "system", "content": f"Sen AI Ödev öğretmenisin. Soruları yaşına ve sınıfına uygun, arkadaş canlısı ve eğitici bir dille yanıtla. Bağlam: {user_context}"},
                 {"role": "user", "content": user_message}
             ],
         )
