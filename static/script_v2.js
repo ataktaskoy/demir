@@ -4,7 +4,7 @@ const messagesDiv = document.getElementById("messages");
 const ttsToggleBtn = document.getElementById("ttsToggleBtn"); 
 const micToggleBtn = document.getElementById("micToggleBtn"); 
 const sendBtn = document.getElementById("sendBtn");
-const micStatusDiv = document.getElementById('micStatus'); // Yeni Eklendi: Mikrofon durumunu gösteren div
+const micStatusDiv = document.getElementById('micStatus'); 
 
 // --- Ses ve Durum Kontrolü ---
 let currentAudio = null;
@@ -57,7 +57,6 @@ function appendMessage(text, sender) {
 function resetUI() {
     isBotProcessing = false;
     setUIEnabled(true);
-    // UI durumunu güncel tutar
     if (recognitionActive) {
         micStatusDiv.textContent = 'Dinleniyor...';
         micStatusDiv.classList.remove('mic-status-hidden');
@@ -87,6 +86,7 @@ function playAudio(base64Data) {
 
     // TTS BAŞLARKEN: Mikrofonu Durdur
     if (recognitionActive && recognition) {
+        // recognition.stop() çağrısı onend'i tetikler
         recognition.stop();
         micToggleBtn.classList.remove('active');
         micStatusDiv.textContent = 'Bot Konuşuyor...';
@@ -97,23 +97,16 @@ function playAudio(base64Data) {
         isSpeaking = false;
         currentAudio = null;
         
-        // TTS BİTERKEN: Mikrofonu tekrar başlat
-        if (micEnabled) {
-             startRecognition();
-        } else {
+        // TTS BİTERKEN: Başlatma işini recognition.onend'e bırakıyoruz!
+        if (!micEnabled) { 
              micStatusDiv.textContent = 'Kapalı';
              micStatusDiv.classList.add('mic-status-hidden');
-             micToggleBtn.classList.remove('active');
         }
     };
     
     audio.play().catch(error => {
         console.error("Ses oynatılırken hata:", error);
         isSpeaking = false;
-        // Hata durumunda da mikrofonu geri aç
-        if (micEnabled) {
-            startRecognition();
-        }
     });
 }
 
@@ -207,7 +200,6 @@ function setupSpeechRecognition() {
         userInput.value = finalTranscript + interimTranscript;
         
         if (finalTranscript) {
-            // Kesinleşmiş metin varsa sessizlik zamanlayıcısını yeniden başlat
             resetSilenceTimeout();
         }
     };
@@ -220,21 +212,22 @@ function setupSpeechRecognition() {
             micEnabled = false; 
         }
 
-        stopRecognition(false); // Otomatik göndermeden durdur
-        
-        // Eğer micEnabled true ise (izin varsa), yeniden başlatmayı dene (onend yerine burada başlatıyoruz)
-        if (micEnabled) {
-            startRecognition();
-        }
+        // Hata durumunda da durdur
+        stopRecognition(false);
     };
 
+    // KRİTİK DÜZELTME: SÜREKLİ DİNLEME DÖNGÜSÜ BURAYA GELDİ
     recognition.onend = function() {
         recognitionActive = false;
         micToggleBtn.classList.remove('active');
         micStatusDiv.classList.add('mic-status-hidden');
+        micStatusDiv.textContent = 'Kapalı'; 
         
-        // Sürekli dinleme modu olduğu için onend'de tekrar başlatma mantığını 
-        // playAudio ve onerror bloklarına taşıdık. Burayı boş bırakıyoruz.
+        // EĞER KULLANICI MİKROFONU KAPATMADIYSA (micEnabled = true), YENİDEN BAŞLAT
+        if (micEnabled) {
+            // 100ms gecikme ile başlatarak döngünün temizlenmesine izin ver
+            setTimeout(startRecognition, 100); 
+        }
     };
 }
 
@@ -272,56 +265,35 @@ function resetSilenceTimeout() {
 }
 
 
-// --- Olay Dinleyicileri ---
-userInput.addEventListener("keypress", (e) => {
-    if (e.key === 'Enter') {
-        sendMessage(userInput.value);
-    }
-});
-
-sendBtn.addEventListener("click", () => {
-    sendMessage(userInput.value);
-});
-
-ttsToggleBtn.addEventListener("click", () => {
-    ttsEnabled = !ttsEnabled;
-    ttsToggleBtn.classList.toggle('active', ttsEnabled);
-    ttsToggleBtn.title = ttsEnabled ? "Botun sesli cevap verme özelliğini kapat" : "Botun sesli cevap verme özelliğini aç";
-
-    if (!ttsEnabled && currentAudio) {
-        currentAudio.pause();
-        isSpeaking = false;
-    }
-});
-
+// --- Olay Dinleyicileri (Toggle Logic Fix) ---
 micToggleBtn.addEventListener("click", () => {
     if (micEnabled) {
         if (!recognitionActive) {
-            // Start
-            micEnabled = true; // Tekrar başlatmaya izin ver
+            // 1. Durum: Kapalıyken tıklandı -> BAŞLAT
+            micEnabled = true; 
             startRecognition();
         } else {
-            // Stop (Kullanıcı tarafından kapatıldı)
-            micEnabled = false;
-            stopRecognition(false); // Göndermeden durdur
+            // 2. Durum: Aktifken tıklandı -> KULLANICI TARAFINDAN KAPAT
+            micEnabled = false; // Döngüyü kırmak için bayrağı indir
+            stopRecognition(false); // Göndermeden durdur (onend tetiklenecek ama micEnabled false olduğu için yeniden başlamayacak)
             
             micToggleBtn.classList.remove('active');
             micStatusDiv.textContent = 'Kapalı';
             micStatusDiv.classList.add('mic-status-hidden');
         }
     } else {
-        // Eğer izin reddi nedeniyle kapalıysa, sadece micEnabled'ı tekrar true yap
+        // 3. Durum: Kapalıyken (micEnabled=false) tıklandı -> TEKRAR AÇ
         micEnabled = true;
         startRecognition();
     }
 });
 
-// --- Three.js Arka Plan Animasyonu ---
+
+// --- Three.js ve Animasyon Kodu (Önceki Adımda Bozulan Kısımlar) ---
 let scene, camera, renderer, sphere;
 let frameCount = 0;
 
 function initThreeJS() {
-    // KRİTİK: THREE.js Kütüphanesi YÜKLÜ DEĞİLSE ÇALIŞMAZ
     if (typeof THREE === 'undefined') {
         console.error("THREE.js yüklenmedi. 3D animasyonu başlatılamıyor.");
         return; 
@@ -335,7 +307,6 @@ function initThreeJS() {
     camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
     camera.position.z = 5;
 
-    // Canvas'ı manuel olarak eklediğiniz varsayılıyor.
     renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
     renderer.setSize(width, height);
 
@@ -385,20 +356,14 @@ function animate() {
 }
 
 
-// --- KRİTİK BAŞLANGIÇ NOKTASI (BOZULANI DÜZELTMEK İÇİN) ---
+// --- Uygulama Başlangıcı ---
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Durum Yükleme (Hemen)
     updateStatusDisplay(); 
-    
-    // 2. Mikrofon Kurulumu (Hemen)
     setupSpeechRecognition();
-    
-    // 3. 3D Animasyon Başlatma
     initThreeJS();
 
-    // 4. Mikrofonu Otomatik Başlatma (Her şey kurulduktan sonra)
+    // Sayfa yüklendiğinde mikrofonu otomatik başlat
     if (micEnabled && recognition) {
-        // 100ms gecikme ile başlatarak UI'ın hazırlanmasına izin ver
         setTimeout(startRecognition, 100); 
     }
 });
