@@ -58,7 +58,7 @@ class User(db.Model, UserMixin):
     surname = db.Column(db.String(100), nullable=True)  
     phone = db.Column(db.String(20), nullable=True)     
     
-    # DÜZELTME: password_hash alanı 128'den 512'ye çıkarıldı.
+    # password_hash alanı 512 karaktere çıkarıldı.
     password_hash = db.Column(db.String(512), nullable=False) 
     
     is_active_member = db.Column(db.Boolean, default=False)
@@ -234,7 +234,13 @@ def ask():
         if not user_message:
             return jsonify({"error": "Mesaj boş olamaz."}), 400
             
-        user_context = f"Kullanıcının sınıfı/seviyesi: {current_user.grade if current_user.grade else 'Belirtilmemiş'}."
+        # KRİTİK DÜZELTME: Kullanıcı Bağlamını Oluşturma
+        user_context = (
+            f"Kullanıcının Adı: {current_user.name if current_user.name else 'Öğrenci'}. "
+            f"Soyadı: {current_user.surname if current_user.surname else 'Öğrenci'}. "
+            f"Sınıfı/Seviyesi: {current_user.grade if current_user.grade else 'Belirtilmemiş'}."
+            "Yanıtlarını bu kişisel bağlama uygun, arkadaş canlısı ve eğitici bir dille ver."
+        )
 
         client = openai.OpenAI(
             api_key=OPENROUTER_API_KEY,
@@ -244,7 +250,8 @@ def ask():
         response = client.chat.completions.create(
             model="openai/gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": f"Sen AI Ödev öğretmenisin. Soruları yaşına ve sınıfına uygun, arkadaş canlısı ve eğitici bir dille yanıtla. Bağlam: {user_context}"},
+                # Kullanıcı bağlamını Sistem rolüne ekliyoruz
+                {"role": "system", "content": f"Sen AI Ödev öğretmenisin. {user_context}"},
                 {"role": "user", "content": user_message}
             ],
         )
@@ -423,5 +430,4 @@ def toggle_membership():
 
 # --- Uygulama Başlatma ---
 if __name__ == '__main__':
-    # db.create_all() artık yukarıda çalıştırıldığı için bu kısım temizlendi.
     app.run(debug=True, host='0.0.0.0', port=10000)
